@@ -26,6 +26,7 @@ func NewDownloadCmd() *cobra.Command {
 	var destDir string
 	var osStr string
 	var version string
+	var additionalURLs []string
 	cmd := &cobra.Command{
 		Use:   "download [board]",
 		Short: "Download a Linux image to the cache or a specified path",
@@ -50,17 +51,20 @@ image to an existing directory instead.
 			if len(args) > 0 {
 				boardID = args[0]
 			}
-			runDownloadCommand(cmd.Context(), boardID, destDir, osStr, version)
+			runDownloadCommand(cmd.Context(), boardID, destDir, osStr, version, additionalURLs)
 		},
 	}
 	cmd.Flags().StringVarP(&version, "version", "v", "", "Version of the image to download. Leave empty for latest")
 	cmd.Flags().StringVar(&osStr, "os", "", "Distribution to download, if more than one is available")
 	cmd.Flags().StringVar(&destDir, "dest-dir", "", "Path to an existing download directory (default: user image cache)")
+	cmd.Flags().StringArrayVar(&additionalURLs, "additional-url", nil, "Additional image index URL (may be specified more than once)")
+	cmd.Flags().StringArrayVar(&additionalURLs, "addtional-url", nil, "Additional image index URL (may be specified more than once)")
+	_ = cmd.Flags().MarkDeprecated("addtional-url", "use --additional-url")
 
 	return cmd
 }
 
-func runDownloadCommand(ctx context.Context, boardID, destDir string, imageOs string, version string) {
+func runDownloadCommand(ctx context.Context, boardID, destDir string, imageOs string, version string, additionalURLs []string) {
 	boardID, _, version = argparse.LegacyArgs(boardID, "", version)
 
 	var downloadPath *paths.Path
@@ -75,7 +79,7 @@ func runDownloadCommand(ctx context.Context, boardID, destDir string, imageOs st
 	// is a form up anyway.
 	var board registry.Board
 	if boardID == "" {
-		selBoard, selOs, selVersion, ok := interactive.SelectImage(ctx, version == "")
+		selBoard, selOs, selVersion, ok := interactive.SelectImage(ctx, version == "", additionalURLs)
 		if !ok {
 			return
 		}
@@ -88,7 +92,7 @@ func runDownloadCommand(ctx context.Context, boardID, destDir string, imageOs st
 		}
 	}
 
-	releases, err := registry.NewClient().Fetch(ctx)
+	releases, err := registry.NewClient(additionalURLs...).Fetch(ctx)
 	if err != nil {
 		// May be the index holding the image, which the lookup below finds out.
 		feedback.Warning(err.Error())

@@ -29,8 +29,8 @@ import (
 )
 
 // Run starts the interactive wizard and performs the flash.
-func Run(ctx context.Context, cacheImage bool) {
-	images := fetchImages(ctx)
+func Run(ctx context.Context, cacheImage bool, additionalURLs []string) {
+	images := fetchImages(ctx, additionalURLs)
 	inventory := readImageCache(ctx)
 
 	boardIDs := slices.Sorted(maps.Keys(images))
@@ -193,8 +193,8 @@ func Run(ctx context.Context, cacheImage bool) {
 
 // SelectImage asks which board to use and, when withVersion, which of its
 // images. One form holds both, so the user can go back. False means canceled.
-func SelectImage(ctx context.Context, withVersion bool) (registry.Board, string, string, bool) {
-	images := fetchImages(ctx)
+func SelectImage(ctx context.Context, withVersion bool, additionalURLs []string) (registry.Board, string, string, bool) {
+	images := fetchImages(ctx, additionalURLs)
 	boardIDs := slices.Sorted(maps.Keys(images))
 	if len(boardIDs) == 0 {
 		feedback.Fatal(i18n.Tr("no image is published yet"), feedback.ErrGeneric)
@@ -245,14 +245,14 @@ func readImageCache(ctx context.Context) cache.Inventory {
 
 // fetchImages reads every index once and groups what is published by board,
 // newest first, so a board appears the day its images do.
-func fetchImages(ctx context.Context) map[string]registry.Releases {
+func fetchImages(ctx context.Context, additionalURLs []string) map[string]registry.Releases {
 	var all registry.Releases
 	var partial error
 	sp := spinner.New().
 		Context(ctx).
 		Title(i18n.Tr("Fetching available images...")).
 		ActionWithErr(func(ctx context.Context) error {
-			releases, err := registry.NewClient().Fetch(ctx)
+			releases, err := registry.NewClient(additionalURLs...).Fetch(ctx)
 			if len(releases) == 0 {
 				// Only fails when no index at all could be read.
 				return err

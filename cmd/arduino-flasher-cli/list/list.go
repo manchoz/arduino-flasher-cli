@@ -26,6 +26,7 @@ import (
 
 func NewListCmd() *cobra.Command {
 	var osStr string
+	var additionalURLs []string
 	cmd := &cobra.Command{
 		Use:   "list [board]",
 		Short: "List the available Linux images",
@@ -46,14 +47,17 @@ Archive checksums are verified before reuse by flash, rather than while listing.
 			if len(args) > 0 {
 				boardID = args[0]
 			}
-			runListCommand(cmd.Context(), boardID, osStr)
+			runListCommand(cmd.Context(), boardID, osStr, additionalURLs)
 		},
 	}
 	cmd.Flags().StringVar(&osStr, "os", "", "Distribution to list. Leave empty for all of them")
+	cmd.Flags().StringArrayVar(&additionalURLs, "additional-url", nil, "Additional image index URL (may be specified more than once)")
+	cmd.Flags().StringArrayVar(&additionalURLs, "addtional-url", nil, "Additional image index URL (may be specified more than once)")
+	_ = cmd.Flags().MarkDeprecated("addtional-url", "use --additional-url")
 	return cmd
 }
 
-func runListCommand(ctx context.Context, boardID string, imageOs string) {
+func runListCommand(ctx context.Context, boardID string, imageOs string, additionalURLs []string) {
 	var board registry.Board
 	if boardID != "" {
 		var ok bool
@@ -63,7 +67,7 @@ func runListCommand(ctx context.Context, boardID string, imageOs string) {
 	}
 
 	// Fetch the manifest once, then filter the releases already in hand.
-	all, err := registry.NewClient().Fetch(ctx)
+	all, err := registry.NewClient(additionalURLs...).Fetch(ctx)
 	if err != nil {
 		// One index failing should not hide the ones that did not.
 		feedback.Warning(err.Error())

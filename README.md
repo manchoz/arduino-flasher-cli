@@ -110,6 +110,17 @@ ARDUINO_FLASHER_ADDITIONAL_URLS="http://127.0.0.1:3001/debian-im/Stable/info.jso
   ./build/arduino-flasher-cli list
 ```
 
+The same can be done for one command with `--additional-url` (repeat the flag
+to add more than one index):
+
+```sh
+./build/arduino-flasher-cli flash unoq --additional-url https://example.com/info.json
+```
+
+The URL must point to an image index in the same format as the published
+`info.json` files. The misspelled `--addtional-url` spelling is accepted for
+backwards compatibility.
+
 `ARDUINO_FLASHER_ADDITIONAL_HEADERS` adds HTTP headers, one `Name: value` per
 line, sent both when reading an index and when downloading the image it points
 at, for a host that asks to be authenticated:

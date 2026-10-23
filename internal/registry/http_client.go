@@ -32,16 +32,18 @@ import (
 
 // Client reads the indexes and downloads what they publish.
 type Client struct {
-	httpClient *http.Client
-	headers    map[string]string
+	httpClient     *http.Client
+	headers        map[string]string
+	additionalURLs []string
 }
 
-// NewClient returns a client for the published indexes, and for any the
-// environment adds.
-func NewClient() *Client {
+// NewClient returns a client for the published indexes, and for any indexes
+// added by the environment or the command line.
+func NewClient(additionalURLs ...string) *Client {
 	return &Client{
-		httpClient: http.DefaultClient,
-		headers:    additionalHeaders(),
+		httpClient:     http.DefaultClient,
+		headers:        additionalHeaders(),
+		additionalURLs: additionalURLs,
 	}
 }
 
@@ -55,7 +57,7 @@ func NewClient() *Client {
 func (c *Client) Fetch(ctx context.Context) (Releases, error) {
 	var res Releases
 	var errs []error
-	for _, index := range indexURLs() {
+	for _, index := range indexURLs(c.additionalURLs...) {
 		releases, err := c.load(ctx, index)
 		if errors.Is(err, errNotPublished) {
 			continue
@@ -152,11 +154,13 @@ var indexes = []*url.URL{
 const additionalURLsEnv = "ARDUINO_FLASHER_ADDITIONAL_URLS"
 
 // indexURLs is every index to read.
-func indexURLs() []*url.URL {
+func indexURLs(cliURLs ...string) []*url.URL {
 	out := slices.Clone(indexes)
-	for _, field := range strings.FieldsFunc(os.Getenv(additionalURLsEnv), func(r rune) bool {
+	fields := strings.FieldsFunc(os.Getenv(additionalURLsEnv), func(r rune) bool {
 		return r == ',' || r == '\n'
-	}) {
+	})
+	fields = append(fields, cliURLs...)
+	for _, field := range fields {
 		if field = strings.TrimSpace(field); field == "" {
 			continue
 		}

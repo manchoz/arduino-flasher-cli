@@ -37,6 +37,7 @@ func NewFlashCmd() *cobra.Command {
 	var rootSizeStr string
 	var osStr string
 	var version string
+	var additionalURLs []string
 	appCmd := &cobra.Command{
 		Use:   "flash [board] [image]",
 		Short: "Flash a Linux image on the board",
@@ -82,7 +83,7 @@ NOTE: On Windows, required drivers are automatically installed with elevated pri
 			}
 			// Flashing needs a board, and the wizard is what asks for one.
 			if len(args) == 0 {
-				interactive.Run(cmd.Context(), cacheImage)
+				interactive.Run(cmd.Context(), cacheImage, additionalURLs)
 				return
 			}
 			imageArg := ""
@@ -107,7 +108,7 @@ NOTE: On Windows, required drivers are automatically installed with elevated pri
 				}
 			}
 
-			runFlashCommand(cmd.Context(), args[0], imageArg, osStr, version, serialStr, forceYes, preserveUser, tempDir, rootSize, cacheImage)
+			runFlashCommand(cmd.Context(), args[0], imageArg, osStr, version, serialStr, forceYes, preserveUser, tempDir, rootSize, cacheImage, additionalURLs)
 		},
 	}
 	appCmd.Flags().StringVarP(&version, "version", "v", "", "Version of the image to download. Leave empty for latest")
@@ -118,6 +119,9 @@ NOTE: On Windows, required drivers are automatically installed with elevated pri
 	appCmd.Flags().BoolVar(&cacheImage, "cache", false, "Keep newly downloaded images in the cache for reuse")
 	appCmd.Flags().BoolVar(&preserveUser, "preserve-user", false, "Preserve user partition")
 	appCmd.Flags().StringVar(&rootSizeStr, "root-size", "", "Size of the root partition (e.g. 10GB). Leave empty for autodetection")
+	appCmd.Flags().StringArrayVar(&additionalURLs, "additional-url", nil, "Additional image index URL (may be specified more than once)")
+	appCmd.Flags().StringArrayVar(&additionalURLs, "addtional-url", nil, "Additional image index URL (may be specified more than once)")
+	_ = appCmd.Flags().MarkDeprecated("addtional-url", "use --additional-url")
 
 	return appCmd
 }
@@ -184,7 +188,7 @@ func rebootRequiredFatal() {
 	feedback.Fatal(i18n.Tr("A system reboot is required to finalize the driver installation. Please reboot your computer and run the flash command again."), feedback.ErrGeneric)
 }
 
-func runFlashCommand(ctx context.Context, boardID, imageArg string, imageOs string, version, serialStr string, forceYes bool, preserveUser bool, tempDir string, rootSize uint64, cacheImage bool) {
+func runFlashCommand(ctx context.Context, boardID, imageArg string, imageOs string, version, serialStr string, forceYes bool, preserveUser bool, tempDir string, rootSize uint64, cacheImage bool, additionalURLs []string) {
 	boardID, imageArg, version = argparse.LegacyArgs(boardID, imageArg, version)
 
 	board, ok := registry.BoardByID(boardID)
@@ -204,7 +208,7 @@ func runFlashCommand(ctx context.Context, boardID, imageArg string, imageOs stri
 	if imagePath != nil {
 		target = imagePath.Base()
 	} else {
-		releases, err := registry.NewClient().Fetch(ctx)
+		releases, err := registry.NewClient(additionalURLs...).Fetch(ctx)
 		if err != nil {
 			// May be the index holding the image, which the lookup below finds out.
 			feedback.Warning(err.Error())
