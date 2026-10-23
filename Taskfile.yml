@@ -89,6 +89,7 @@ tasks:
       - test -f ./internal/updater/artifacts/resources_linux_amd64/qdl
       - test -f ./internal/updater/artifacts/resources_linux_arm64/qdl
       - test -f ./internal/updater/artifacts/resources_windows_amd64/qdl.exe
+      - test -f ./internal/updater/artifacts/resources_windows_arm64/qdl.exe
     cmd: sh ./internal/updater/artifacts/download_resources.sh
 
   clean:

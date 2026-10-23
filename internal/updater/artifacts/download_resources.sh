@@ -35,6 +35,11 @@ mkdir -p resources_windows_amd64
 gh release download "$TAG" --repo "$REPO" --pattern "qdl_*_Windows_32bit.tar.gz" --dir resources_windows_amd64
 tar -xzf resources_windows_amd64/qdl_*_Windows_32bit.tar.gz -C resources_windows_amd64 qdl.exe
 
+# Download and extract Windows arm64
+mkdir -p resources_windows_arm64
+gh release download "$TAG" --repo "$REPO" --pattern "qdl_*_Windows_ARM64.tar.gz" --dir resources_windows_arm64
+tar -xzf resources_windows_arm64/qdl_*_Windows_ARM64.tar.gz -C resources_windows_arm64 qdl.exe
+
 # Download and extract macOS 64-bit
 mkdir -p resources_darwin_amd64
 gh release download "$TAG" --repo "$REPO" --pattern "qdl_*_macOS_64bit.tar.gz" --dir resources_darwin_amd64

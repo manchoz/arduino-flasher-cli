@@ -23,6 +23,9 @@ jobs:
           - runon: windows-2025
             os: windows
             arch: amd64
+          - runon: windows-2025
+            os: windows
+            arch: arm64
     runs-on: ${{ matrix.runon }}
     outputs:
       release: ${{ steps.set-version.outputs.RELEASE_NAME }}
