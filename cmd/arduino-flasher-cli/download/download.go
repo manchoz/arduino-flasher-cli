@@ -98,8 +98,12 @@ func runDownloadCommand(ctx context.Context, boardID, destDir string, imageOs st
 		feedback.Warning(err.Error())
 	}
 
-	imageOs = cmp.Or(imageOs, board.DefaultOs)
-	rel, err := releases.Resolve(imageOs, board.ID, version)
+	var rel registry.Release
+	if imageOs == "" {
+		rel, err = releases.ResolveDefault(board.DefaultOs, board.ID, version)
+	} else {
+		rel, err = releases.Resolve(imageOs, board.ID, version)
+	}
 	if err != nil {
 		feedback.Fatal(i18n.Tr("error looking up the image: %v", err), feedback.ErrBadArgument)
 	}

@@ -75,6 +75,19 @@ func (rs Releases) Resolve(os string, board string, version string) (Release, er
 	return rel, nil
 }
 
+// ResolveDefault selects the board's configured default flavour when it is
+// published. If it is not available, it falls back to the newest release for
+// the board, regardless of flavour. This keeps a board usable when an image
+// index publishes a different Linux distribution than its preferred default.
+func (rs Releases) ResolveDefault(defaultOS string, board string, version string) (Release, error) {
+	if defaultOS != "" {
+		if rel, err := rs.Resolve(defaultOS, board, version); err == nil {
+			return rel, nil
+		}
+	}
+	return rs.Resolve("", board, version)
+}
+
 // OSes is every distribution something was published for in rs, which is what to
 // offer a choice between rather than a list this flasher carries.
 func (rs Releases) OSes() []string {

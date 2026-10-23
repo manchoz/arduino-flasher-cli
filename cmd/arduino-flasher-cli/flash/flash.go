@@ -6,7 +6,6 @@
 package flash
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -213,10 +212,15 @@ func runFlashCommand(ctx context.Context, boardID, imageArg string, imageOs stri
 			// May be the index holding the image, which the lookup below finds out.
 			feedback.Warning(err.Error())
 		}
-		imageOs = cmp.Or(imageOs, board.DefaultOs)
-		if rel, err = releases.Resolve(imageOs, board.ID, version); err != nil {
+		if imageOs == "" {
+			rel, err = releases.ResolveDefault(board.DefaultOs, board.ID, version)
+		} else {
+			rel, err = releases.Resolve(imageOs, board.ID, version)
+		}
+		if err != nil {
 			feedback.Fatal(i18n.Tr("error looking up the image: %v", err), feedback.ErrBadArgument)
 		}
+		imageOs = rel.OS
 		target = i18n.Tr("%s %s for the %s", imageOs, rel.Version, board.Label)
 	}
 

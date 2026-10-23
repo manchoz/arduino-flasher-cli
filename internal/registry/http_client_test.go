@@ -135,6 +135,15 @@ func TestResolve(t *testing.T) {
 	require.ErrorContains(t, err, "no ubuntu image is published for the UNO Q", "the OS filters too")
 }
 
+func TestResolveDefaultFallsBackToAnotherFlavour(t *testing.T) {
+	releases := parseManifest(t, twoBoardManifest)
+
+	rel, err := releases.ResolveDefault(Ubuntu, VentunoQ.ID, "")
+	require.NoError(t, err)
+	assert.Equal(t, "300", rel.Version)
+	assert.Equal(t, Debian, rel.OS)
+}
+
 // A build number is not padded, so it cannot be compared as text as it comes.
 func TestCompareVersions(t *testing.T) {
 	assert.Negative(t, compareVersions("20260407-99", "20260407-523"), "99 is an earlier build than 523")
