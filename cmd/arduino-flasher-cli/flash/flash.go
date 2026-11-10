@@ -119,8 +119,6 @@ NOTE: On Windows, required drivers are automatically installed with elevated pri
 	appCmd.Flags().BoolVar(&preserveUser, "preserve-user", false, "Preserve user partition")
 	appCmd.Flags().StringVar(&rootSizeStr, "root-size", "", "Size of the root partition (e.g. 10GB). Leave empty for autodetection")
 	appCmd.Flags().StringArrayVar(&additionalURLs, "additional-url", nil, "Additional image index URL (may be specified more than once)")
-	appCmd.Flags().StringArrayVar(&additionalURLs, "addtional-url", nil, "Additional image index URL (may be specified more than once)")
-	_ = appCmd.Flags().MarkDeprecated("addtional-url", "use --additional-url")
 
 	return appCmd
 }

@@ -58,8 +58,6 @@ image to an existing directory instead.
 	cmd.Flags().StringVar(&osStr, "os", "", "Distribution to download, if more than one is available")
 	cmd.Flags().StringVar(&destDir, "dest-dir", "", "Path to an existing download directory (default: user image cache)")
 	cmd.Flags().StringArrayVar(&additionalURLs, "additional-url", nil, "Additional image index URL (may be specified more than once)")
-	cmd.Flags().StringArrayVar(&additionalURLs, "addtional-url", nil, "Additional image index URL (may be specified more than once)")
-	_ = cmd.Flags().MarkDeprecated("addtional-url", "use --additional-url")
 
 	return cmd
 }

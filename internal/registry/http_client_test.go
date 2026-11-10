@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"slices"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -229,6 +230,27 @@ func TestFetchSpansIndexes(t *testing.T) {
 	assert.True(t, slices.IsSortedFunc(releases, func(a, b Release) int {
 		return compareVersions(b.Version, a.Version)
 	}), "a snapshot is newest first across indexes, not per index")
+}
+
+func TestFetchIncludesEnvironmentAndCLIIndexes(t *testing.T) {
+	serveIndexes(t, twoBoardManifest)
+	var requested []string
+	var mu sync.Mutex
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		requested = append(requested, r.URL.Path)
+		mu.Unlock()
+		_, _ = w.Write([]byte(mixedOsManifest))
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv(additionalURLsEnv, srv.URL+"/env-comma,\n"+srv.URL+"/env-newline")
+
+	releases, err := NewClient(srv.URL+"/cli-first", srv.URL+"/cli-second").Fetch(context.Background())
+	require.NoError(t, err)
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, []string{"/env-comma", "/env-newline", "/cli-first", "/cli-second"}, requested)
+	require.Len(t, releases, 23, "the built-in, environment and both CLI indexes are read")
 }
 
 // An index that is not published yet is an ordinary state of affairs, so it is

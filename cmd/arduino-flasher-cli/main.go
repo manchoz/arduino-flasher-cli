@@ -27,9 +27,9 @@ import (
 
 // Version will be set a build time with -ldflags
 var Version string = "0.0.0-dev"
-var format string
 
-func main() {
+func newRootCmd() *cobra.Command {
+	var format string
 	rootCmd := &cobra.Command{
 		Use:   "arduino-flasher-cli",
 		Short: "A CLI to update your Arduino UNO Q board, by downloading and flashing the latest Arduino Linux image",
@@ -41,6 +41,9 @@ func main() {
 				feedback.Fatal(i18n.Tr("Invalid output format: %s", format), feedback.ErrBadArgument)
 			}
 			feedback.SetFormat(format)
+			if cmd.Flags().Changed("additional-url") {
+				feedback.Warning(i18n.Tr("Images from --additional-url sources are unofficial and have not been validated by Arduino. Download and flash them only if you trust the source."))
+			}
 		},
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -58,6 +61,11 @@ func main() {
 		daemon.NewDaemonCommand(service.NewFlasherServer()),
 	)
 
+	return rootCmd
+}
+
+func main() {
+	rootCmd := newRootCmd()
 	ctx := context.Background()
 	ctx, _ = cleanup.InterruptableContext(ctx)
 	if err := rootCmd.ExecuteContext(ctx); err != nil {

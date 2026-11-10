@@ -118,8 +118,9 @@ to add more than one index):
 ```
 
 The URL must point to an image index in the same format as the published
-`info.json` files. The misspelled `--addtional-url` spelling is accepted for
-backwards compatibility.
+`info.json` files. Using `--additional-url` prints a warning: images from these
+sources are unofficial and have not been validated by Arduino. Download and
+flash them only if you trust the source.
 
 `ARDUINO_FLASHER_ADDITIONAL_HEADERS` adds HTTP headers, one `Name: value` per
 line, sent both when reading an index and when downloading the image it points

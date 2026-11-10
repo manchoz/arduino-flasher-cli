@@ -52,8 +52,6 @@ Archive checksums are verified before reuse by flash, rather than while listing.
 	}
 	cmd.Flags().StringVar(&osStr, "os", "", "Distribution to list. Leave empty for all of them")
 	cmd.Flags().StringArrayVar(&additionalURLs, "additional-url", nil, "Additional image index URL (may be specified more than once)")
-	cmd.Flags().StringArrayVar(&additionalURLs, "addtional-url", nil, "Additional image index URL (may be specified more than once)")
-	_ = cmd.Flags().MarkDeprecated("addtional-url", "use --additional-url")
 	return cmd
 }
 
