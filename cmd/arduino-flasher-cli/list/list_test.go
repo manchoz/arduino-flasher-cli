@@ -286,8 +286,45 @@ func TestListGroupsBySourceAndHighlightsTrust(t *testing.T) {
 	require.Contains(t, sections[1], custom.Version)
 	require.NotContains(t, sections[1], rel.Version)
 	require.NotContains(t, output, "https://images.example/image.tar.zst", "headings must identify indexes, not archive hosts")
-	require.Contains(t, output, "LATEST is calculated across all sources")
+	require.Contains(t, output, "LATEST marks the newest image per source")
 	require.Len(t, transport.requests, 3)
+}
+
+func TestListLatestMarkersArePerSource(t *testing.T) {
+	_, transport, official := setupList(t)
+	olderOfficial := official
+	olderOfficial.Version = "20250914-172"
+	transport.releases = registry.Releases{olderOfficial, official}
+	firstURL, secondURL := "http://first.local/info.json", "http://second.local/info.json"
+	firstLatest, firstOlder := official, official
+	firstLatest.Version, firstOlder.Version = "20250917-175", "20250913-171"
+	secondLatest, secondOlder := official, official
+	secondLatest.Version, secondOlder.Version = "20250918-176", "20250916-174"
+	transport.additional = map[string]registry.Releases{
+		firstURL:  {firstOlder, firstLatest},
+		secondURL: {secondOlder, secondLatest},
+	}
+	output := executeList(t, "--additional-url", firstURL, "--additional-url", secondURL)
+	for _, latest := range []registry.Release{official, firstLatest, secondLatest} {
+		requireCacheMark(t, output, latest.Version, false)
+	}
+	for _, older := range []registry.Release{olderOfficial, firstOlder, secondOlder} {
+		found := false
+		for _, line := range strings.Split(output, "\n") {
+			fields := strings.Fields(line)
+			if len(fields) >= 3 && fields[2] == older.Version {
+				require.NotContains(t, line, "✓", "older images must not be latest within their source")
+				found = true
+			}
+		}
+		require.True(t, found, "older release must still be listed: %s", older.Version)
+	}
+	// The registry's resolver still chooses the newest version across sources.
+	releases, err := registry.NewClient(firstURL, secondURL).Fetch(context.Background())
+	require.NoError(t, err)
+	selected, err := releases.Resolve("debian", "unoq", "")
+	require.NoError(t, err)
+	require.Equal(t, secondLatest.Version, selected.Version)
 }
 
 func TestListSourceHeadingsDoNotExposeCredentials(t *testing.T) {

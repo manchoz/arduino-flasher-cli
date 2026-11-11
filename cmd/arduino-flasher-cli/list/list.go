@@ -37,8 +37,8 @@ func NewListCmd() *cobra.Command {
 Images are listed together in one table by default. With --additional-url,
 official images are combined in one section, followed by each additional source
 marked unofficial/unvalidated. Each table includes all matching boards and OSes.
-The argument selects a board, and --os a distribution. LATEST still means newest
-across all sources for that board and OS.
+The argument selects a board, and --os a distribution. LATEST marks the newest
+image within each source for that board and OS.
 The CACHED column marks local archives whose metadata matches the online image.
 Archive checksums are verified before reuse by flash, rather than while listing.
 `,
@@ -92,12 +92,18 @@ func runListCommand(ctx context.Context, boardID string, imageOs string, additio
 	}
 
 	result := listResult{board: board, showSources: len(additionalURLs) > 0}
+	type imageLine struct{ source, board, os string }
+	seen := map[imageLine]bool{}
+	// Fetch is newest first, so the first image of each source/board/OS is latest.
 	for _, r := range all.Filter(imageOs, board.ID) {
+		line := imageLine{r.SourceURL, r.Board, r.OS}
+		latest := !seen[line]
+		seen[line] = true
 		result.Releases = append(result.Releases, listRelease{
 			Version:   r.Version,
 			Board:     r.Board,
 			Os:        r.OS,
-			Latest:    r.Latest,
+			Latest:    latest,
 			Cached:    inventory.Contains(r),
 			Url:       r.Url,
 			Sha256:    r.Sha256,
@@ -124,7 +130,7 @@ type listRelease struct {
 	Board   string `json:"board"`
 	// Os is the distribution as the index named it. Empty when it named none.
 	Os string `json:"os,omitempty"`
-	// Latest is whether this is the most recent of its board and distribution.
+	// Latest is the most recent image for its source, board and distribution.
 	Latest bool `json:"latest"`
 	// Cached indicates matching local metadata, not a freshly verified checksum.
 	Cached bool `json:"cached"`
@@ -192,7 +198,7 @@ func (lr listResult) String() string {
 		}
 		sections = append(sections, heading+"\n"+groups[key].renderTable())
 	}
-	return strings.Join(sections, "\n\n") + "\n\n" + i18n.Tr("LATEST is calculated across all sources for each board and distribution.")
+	return strings.Join(sections, "\n\n") + "\n\n" + i18n.Tr("LATEST marks the newest image per source, board and distribution.")
 }
 
 func displaySourceURL(raw string) string {

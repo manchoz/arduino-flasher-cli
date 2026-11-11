@@ -151,9 +151,11 @@ JSON output remains a flat `releases` array and includes `source_url` and
 `official` on each image. JSON retains full source URLs, so treat it as sensitive
 if your index URLs contain credentials or tokens. Official status is assigned
 from the built-in index configuration, never from a manifest's claimed publisher.
-Board IDs, cache identity and image selection are unchanged. `LATEST` continues
-to mean newest across all configured sources for each board and distribution;
-splitting the display does not turn it into a per-source marker.
+Board IDs, cache identity and image selection are unchanged. In CLI text and JSON
+list output, `LATEST` marks the newest image within each source for each board
+and distribution. Official and additional sources can both have latest markers.
+Download and flash still resolve versions across the configured sources; these
+per-source listing markers do not change which image is selected automatically.
 
 ## Update QDL version
 
