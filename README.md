@@ -134,13 +134,17 @@ ARDUINO_FLASHER_ADDITIONAL_HEADERS="Authorization: Bearer $TOKEN" \
 An index that cannot be read is reported as a warning and the others are still
 listed. One that is not published yet is passed over in silence.
 
-The `list` command separates images into numbered sections by their source index.
-Official Arduino sections appear first, with bold green headings on color-capable
-terminals. Additional sources have bold yellow `UNOFFICIAL / UNVALIDATED` headings.
-The section separators and labels remain clear without color. Each heading shows
-the index URL once, not the archive download URL; credentials and query strings
-are redacted in the human-readable headings. Separate section numbers distinguish
-indexes that differ only by redacted parameters.
+The `list` command shows UNO Q and VENTUNO Q images together in one table by
+default, without source headings or URLs. Supplying `--additional-url` enables
+numbered source sections: one combined official Arduino table, followed by each
+additional index. All matching boards and distributions stay together within
+each table. The official heading is bold green on color-capable terminals;
+additional headings are bold yellow and marked `UNOFFICIAL / UNVALIDATED`.
+Separators and labels remain clear without color. Each contributing index URL
+appears once in its heading, with credentials and query strings redacted.
+Separate section numbers distinguish indexes that differ only by redacted
+parameters. Environment-provided indexes still participate in the listing, but
+source headings are enabled only by the command-line `--additional-url` flag.
 
 JSON output remains a flat `releases` array and includes `source_url` and
 `official` on each image. JSON retains full source URLs, so treat it as sensitive

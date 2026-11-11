@@ -224,6 +224,49 @@ func TestListFiltersWithCacheMarks(t *testing.T) {
 	require.NotContains(t, output, "ubuntu")
 }
 
+func TestListCombinesBoardsAndOnlyShowsSourcesWithFlag(t *testing.T) {
+	for _, withSources := range []bool{false, true} {
+		t.Run(fmt.Sprintf("sources=%t", withSources), func(t *testing.T) {
+			_, transport, uno := setupList(t)
+			ventuno := uno
+			ventuno.Board, ventuno.OS, ventuno.Version = "ventunoq", "ubuntu", "20250917-175"
+			additionalURL := "http://lan-host.local:8080/info.json"
+			custom := uno
+			custom.Version = "20250916-174"
+			transport.additional = map[string]registry.Releases{
+				"https://downloads.arduino.cc/ubuntu-im/Stable/info.json": {ventuno},
+				additionalURL: {custom},
+			}
+			var args []string
+			if withSources {
+				args = []string{"--additional-url", additionalURL}
+			} else {
+				t.Setenv("ARDUINO_FLASHER_ADDITIONAL_URLS", additionalURL)
+			}
+			output := executeList(t, args...)
+			if withSources {
+				sections := strings.Split(output, "\n\n")
+				require.Contains(t, sections[0], "unoq")
+				require.Contains(t, sections[0], "ventunoq")
+				require.Contains(t, sections[0], "debian-im/Stable/info.json")
+				require.Contains(t, sections[0], "ubuntu-im/Stable/info.json")
+				require.NotContains(t, sections[0], custom.Version)
+				require.Equal(t, 1, strings.Count(output, "ARDUINO OFFICIAL"))
+				require.Contains(t, sections[1], custom.Version)
+			} else {
+				require.Contains(t, output, "unoq")
+				require.Contains(t, output, "ventunoq")
+				require.Contains(t, output, custom.Version, "environment indexes still participate without enabling source headings")
+				require.Equal(t, 1, strings.Count(output, "BOARD"), "both boards belong to the same table")
+				require.NotContains(t, output, "SOURCE")
+				require.NotContains(t, output, "Index:")
+				require.NotContains(t, output, "https://")
+				require.NotContains(t, output, "across all sources")
+			}
+		})
+	}
+}
+
 func TestListGroupsBySourceAndHighlightsTrust(t *testing.T) {
 	_, transport, rel := setupList(t)
 	additionalURL := "http://lan-host.local:8080/info.json"
@@ -247,7 +290,7 @@ func TestListGroupsBySourceAndHighlightsTrust(t *testing.T) {
 }
 
 func TestListSourceHeadingsDoNotExposeCredentials(t *testing.T) {
-	result := listResult{Releases: []listRelease{
+	result := listResult{showSources: true, Releases: []listRelease{
 		{Board: "unoq", Os: "debian", Version: "one", SourceURL: "https://user:secret@example.com/info.json?token=private"},
 		{Board: "unoq", Os: "debian", Version: "two", SourceURL: "https://user:secret@example.com/info.json?token=other"},
 	}}

@@ -34,10 +34,11 @@ func NewListCmd() *cobra.Command {
 		Short: "List the available Linux images",
 		Long: `List the available Linux images.
 
-Images are separated by source index, with official sources first and additional
-sources clearly marked as unofficial/unvalidated. Within each source, images are
-grouped by board and distribution. The argument selects a board, and --os a
-distribution. LATEST still means newest across all sources for that board and OS.
+Images are listed together in one table by default. With --additional-url,
+official images are combined in one section, followed by each additional source
+marked unofficial/unvalidated. Each table includes all matching boards and OSes.
+The argument selects a board, and --os a distribution. LATEST still means newest
+across all sources for that board and OS.
 The CACHED column marks local archives whose metadata matches the online image.
 Archive checksums are verified before reuse by flash, rather than while listing.
 `,
@@ -90,7 +91,7 @@ func runListCommand(ctx context.Context, boardID string, imageOs string, additio
 		inventory = cache.Inventory{}
 	}
 
-	result := listResult{board: board}
+	result := listResult{board: board, showSources: len(additionalURLs) > 0}
 	for _, r := range all.Filter(imageOs, board.ID) {
 		result.Releases = append(result.Releases, listRelease{
 			Version:   r.Version,
@@ -112,7 +113,8 @@ func runListCommand(ctx context.Context, boardID string, imageOs string, additio
 type listResult struct {
 	Releases []listRelease `json:"releases"`
 	// board is only for the empty-result message.
-	board registry.Board
+	board       registry.Board
+	showSources bool
 }
 
 // All three of version, board and os are needed to identify an image: the same
@@ -147,6 +149,9 @@ func (lr listResult) String() string {
 		}
 		return i18n.Tr("No images are published yet.")
 	}
+	if !lr.showSources {
+		return lr.renderTable()
+	}
 
 	type source struct {
 		url      string
@@ -155,6 +160,9 @@ func (lr listResult) String() string {
 	groups := map[source]listResult{}
 	for _, r := range lr.Releases {
 		key := source{r.SourceURL, r.Official}
+		if r.Official {
+			key.url = ""
+		}
 		section := groups[key]
 		section.Releases = append(section.Releases, r)
 		groups[key] = section
@@ -179,7 +187,14 @@ func (lr listResult) String() string {
 			title = i18n.Tr("=== SOURCE %d: UNKNOWN ===", i+1)
 		}
 		heading := color.New(color.Bold, headingColor).Sprint(title)
-		sections = append(sections, heading+"\n"+i18n.Tr("Index: %s", displaySourceURL(key.url))+"\n"+groups[key].renderTable())
+		indexes := map[string]bool{}
+		for _, r := range groups[key].Releases {
+			indexes[r.SourceURL] = true
+		}
+		for _, index := range slices.Sorted(maps.Keys(indexes)) {
+			heading += "\n" + i18n.Tr("Index: %s", displaySourceURL(index))
+		}
+		sections = append(sections, heading+"\n"+groups[key].renderTable())
 	}
 	return strings.Join(sections, "\n\n") + "\n\n" + i18n.Tr("LATEST is calculated across all sources for each board and distribution.")
 }
