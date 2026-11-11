@@ -8,24 +8,22 @@ package registry
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"net/url"
 	"path"
 	"strings"
 )
 
-// index is the JSON an index publishes, mirrored field for field so that what an
-// index holds is readable in one place, including what the flasher ignores.
-type index struct {
-	// Latest is the most recent release of the index as a whole, which is not the
-	// most recent one of any board or distribution in particular. Nothing uses
-	// it: callers want [Releases.Latest] after a [Releases.Filter].
-	Latest indexRelease `json:"latest"`
-	// Releases is every release the index holds, oldest first.
-	Releases []indexRelease `json:"releases"`
+// Manifest is the published info.json format, shared by the reader and editor.
+type Manifest struct {
+	// Latest names the publisher's selected release for the index as a whole.
+	// The flasher resolves versions separately for each board and distribution.
+	Latest   *ManifestRelease  `json:"latest,omitempty"`
+	Releases []ManifestRelease `json:"releases"`
 }
 
-// indexRelease is one entry of an index.
-type indexRelease struct {
+// ManifestRelease is one entry in a published manifest.
+type ManifestRelease struct {
 	// Version is a build date and number, "20250807-136".
 	Version string `json:"version"`
 	// Url points at the image archive, named after the release.
@@ -45,7 +43,7 @@ type indexRelease struct {
 // parse turns an index into the releases the flasher works with. An entry it
 // cannot use is passed over: a newly published board must not break reading the
 // others, and one entry the publisher got wrong is no reason to lose the rest.
-func (idx index) parse() Releases {
+func (idx Manifest) parse() Releases {
 	var releases Releases
 	for _, r := range idx.Releases {
 		board, ok := boardByLabel(r.Board)
@@ -77,6 +75,26 @@ func (idx index) parse() Releases {
 	}
 	releases.sortNewestFirst()
 	return releases
+}
+
+// SetLatest selects an existing URL, or the newest version when url is empty.
+func (idx *Manifest) SetLatest(url string) error {
+	var latest *ManifestRelease
+	for _, r := range idx.Releases {
+		if url != "" {
+			if r.Url == url {
+				idx.Latest = &r
+				return nil
+			}
+		} else if latest == nil || compareVersions(r.Version, latest.Version) > 0 {
+			latest = &r
+		}
+	}
+	if url != "" {
+		return fmt.Errorf("URL is not in the manifest: %s", url)
+	}
+	idx.Latest = latest
+	return nil
 }
 
 // boardByLabel returns the board an index named, which it does by label.

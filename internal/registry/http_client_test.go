@@ -24,7 +24,7 @@ import (
 // and what it is turned into are both covered without a server in the way.
 func parseManifest(t *testing.T, body string) Releases {
 	t.Helper()
-	var idx index
+	var idx Manifest
 	require.NoError(t, json.Unmarshal([]byte(body), &idx))
 	return idx.parse()
 }

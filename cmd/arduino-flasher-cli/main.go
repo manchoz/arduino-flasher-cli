@@ -19,6 +19,7 @@ import (
 	"github.com/arduino/arduino-flasher-cli/cmd/arduino-flasher-cli/drivers"
 	"github.com/arduino/arduino-flasher-cli/cmd/arduino-flasher-cli/flash"
 	"github.com/arduino/arduino-flasher-cli/cmd/arduino-flasher-cli/list"
+	"github.com/arduino/arduino-flasher-cli/cmd/arduino-flasher-cli/manifest"
 	"github.com/arduino/arduino-flasher-cli/cmd/arduino-flasher-cli/version"
 	"github.com/arduino/arduino-flasher-cli/cmd/feedback"
 	"github.com/arduino/arduino-flasher-cli/cmd/i18n"
@@ -57,6 +58,7 @@ func newRootCmd() *cobra.Command {
 		list.NewListCmd(),
 		download.NewDownloadCmd(),
 		cache.NewCacheCmd(),
+		manifest.NewManifestCmd(),
 		version.NewVersionCmd(Version),
 		daemon.NewDaemonCommand(service.NewFlasherServer()),
 	)

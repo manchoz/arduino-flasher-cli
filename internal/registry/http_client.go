@@ -214,8 +214,7 @@ func (c *Client) addHeaders(req *http.Request) {
 	}
 }
 
-// load fetches and decodes a single index. What one holds is [index]; what it
-// becomes is [index.parse].
+// load fetches and decodes a single index into a release snapshot.
 func (c *Client) load(ctx context.Context, u *url.URL) (Releases, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 	if err != nil {
@@ -236,7 +235,7 @@ func (c *Client) load(ctx context.Context, u *url.URL) (Releases, error) {
 		return nil, fmt.Errorf("unexpected status %s", resp.Status)
 	}
 
-	var idx index
+	var idx Manifest
 	if err := json.NewDecoder(resp.Body).Decode(&idx); err != nil {
 		return nil, fmt.Errorf("invalid JSON: %w", err)
 	}

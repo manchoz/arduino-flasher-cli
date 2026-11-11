@@ -157,6 +157,70 @@ and distribution. Official and additional sources can both have latest markers.
 Download and flash still resolve versions across the configured sources; these
 per-source listing markers do not change which image is selected automatically.
 
+## Create and edit image manifests
+
+The `manifest` commands write the same JSON format as the published `info.json`
+indexes. Create an empty manifest or build one from local image files, a directory,
+or a list of HTTP(S) image URLs:
+
+```sh
+arduino-flasher-cli manifest create --output info.json
+arduino-flasher-cli manifest create ./images --base-url https://example.com/images/ --output info.json
+arduino-flasher-cli manifest create https://example.com/unoq-debian-20261101-1.tar.zst https://example.com/unoq-debian-20261102-1.tar.zst --output info.json
+```
+
+Local files require `--base-url`, the published directory where those files will
+be hosted. Each filename is appended to that URL, with spaces and other special
+characters escaped. This command does **not** upload files. Directory scans are
+not recursive and include image archives (`.tar`, `.tar.zst`, `.tar.gz`, `.tgz`,
+`.tar.xz`, `.tar.bz2`, `.zip`) and `.img` files, including compressed `.img` files.
+Other files, subdirectories and symlinks inside the directory are skipped.
+Individual files can be supplied explicitly regardless of their extension.
+
+Board, OS and versions such as `20261101-1` are detected from filenames. Unknown
+or ambiguous metadata produces a warning and an interactive prompt. For scripts,
+or to override detection, supply `--board`, `--os` and `--version`. These flags
+apply to every image added by that invocation:
+
+```sh
+arduino-flasher-cli manifest add ./custom-image.zip --manifest info.json --base-url https://example.com/images/ --board ventunoq --os "Debian GNU/Linux 13 (trixie)" --version 20261101-1
+```
+
+SHA-256 is calculated from the complete file contents. Remote images are streamed
+in full without being saved; this can use significant bandwidth. The existing
+`ARDUINO_FLASHER_ADDITIONAL_HEADERS` setting also applies to these requests.
+HTTP errors, empty files and HTML responses are rejected. Filename detection and
+checksums do not validate that an image is safe or suitable for the board.
+
+Remove an entry by its exact URL, or by its local filename with `--base-url`:
+
+```sh
+arduino-flasher-cli manifest remove https://example.com/images/custom-image.zip --manifest info.json
+```
+
+Removal only edits the manifest; it does not delete local or remote images.
+Create refuses to overwrite an existing manifest. Failed edits leave the existing
+file unchanged. Edit a manifest from only one process at a time. Files with
+unrecognized JSON fields are rejected rather than silently losing those fields.
+
+### Select the latest entry
+
+Use `--latest <URL>` with `create`, `add` or `remove`, or select an existing URL
+without hashing or downloading it again:
+
+```sh
+arduino-flasher-cli manifest latest https://example.com/images/custom-image.zip --manifest info.json
+```
+
+The selected URL must be present in the resulting manifest. New manifests default
+to the newest version. Additions preserve the existing selection; removing the
+selected image picks the newest remaining version unless `--latest` is supplied.
+Empty manifests have an empty `releases` array and omit `latest`.
+
+This sets the manifest's top-level `latest` block. The flasher's existing image
+selection remains version-based for each board and distribution; it does not
+use that block to override its selection.
+
 ## Update QDL version
 
 flasher-cli embeds a statically builded [qdl](https://github.com/linux-msm/qdl) binary taken from the https://github.com/arduino/qdl-packing repo. To update the qdl version you need to:
