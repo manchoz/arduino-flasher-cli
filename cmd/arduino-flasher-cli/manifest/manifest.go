@@ -37,6 +37,7 @@ func NewManifestCmd() *cobra.Command {
 	for _, action := range []string{"create", "add", "remove", "latest"} {
 		cmd.AddCommand(newEditCmd(action))
 	}
+	cmd.AddCommand(newServeCmd())
 	return cmd
 }
 
@@ -166,10 +167,8 @@ func editManifest(ctx context.Context, action string, inputs []string, opts opti
 		if err != nil {
 			return m, err
 		}
-		if slices.ContainsFunc(m.Releases, func(existing registry.ManifestRelease) bool {
-			return existing.Board == r.Board && registry.OSName(existing.Os) == registry.OSName(r.Os) && existing.Version == r.Version
-		}) {
-			return m, fmt.Errorf("image for %s, %s, version %s already exists; remove the previous entry or specify a different --version", r.Board, registry.OSName(r.Os), r.Version)
+		if err := checkImageIdentity(m.Releases, r); err != nil {
+			return m, err
 		}
 		m.Releases = append(m.Releases, r)
 	}
@@ -190,6 +189,15 @@ func editManifest(ctx context.Context, action string, inputs []string, opts opti
 		return m, err
 	}
 	return m, writeManifest(opts.file, m, action == "create")
+}
+
+func checkImageIdentity(releases []registry.ManifestRelease, image registry.ManifestRelease) error {
+	if slices.ContainsFunc(releases, func(existing registry.ManifestRelease) bool {
+		return existing.Board == image.Board && registry.OSName(existing.Os) == registry.OSName(image.Os) && existing.Version == image.Version
+	}) {
+		return fmt.Errorf("image for %s, %s, version %s already exists; remove the previous entry or specify a different --version", image.Board, registry.OSName(image.Os), image.Version)
+	}
+	return nil
 }
 
 func readManifest(file string) (registry.Manifest, error) {

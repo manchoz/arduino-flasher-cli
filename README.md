@@ -231,6 +231,77 @@ This sets the manifest's top-level `latest` block. The flasher's existing image
 selection remains version-based for each board and distribution; it does not
 use that block to override its selection.
 
+### Serve a manifest on the LAN
+
+Generate a manifest in memory and serve a local image directory directly:
+
+```sh
+arduino-flasher-cli manifest serve --dir ./images --port 8080
+```
+
+Without `--manifest`, `--dir` defaults to the current directory. The server scans
+recognized image archives without recursion, detects metadata from their names,
+and prompts for missing values. Use `--board`, `--os` and `--version` for scripts
+or overrides; these apply to every generated entry:
+
+```sh
+arduino-flasher-cli manifest serve --dir ./images --board ventunoq --os debian --version custom-1
+```
+
+No JSON file is created or overwritten, even if `info.json` already exists in the
+directory. Checksums are calculated once at startup from the same open files used
+for downloads. The generated `latest` entry defaults to the newest version.
+Missing metadata, duplicate image identities, empty archives or a directory with
+no image archives stop startup before the server begins listening.
+
+To serve a saved manifest instead, provide it explicitly:
+
+```sh
+arduino-flasher-cli manifest serve --manifest info.json --dir ./images --port 8080
+```
+
+With `--manifest`, `--dir` defaults to that manifest's directory. Metadata override
+flags are not accepted in this mode, and a missing or invalid manifest is an
+error rather than a request to generate one.
+
+`--port` defaults to `8080`. The server listens on all network interfaces and
+prints its manifest URL. Port `0` asks the OS for an available port. The chosen
+port must be allowed through the host firewall.
+
+On another LAN machine, use the printed URL with `--additional-url`:
+
+```sh
+arduino-flasher-cli list --additional-url http://my-host.local:8080/info.json
+arduino-flasher-cli download unoq --additional-url http://my-host.local:8080/info.json
+```
+
+Use the host's LAN IP instead of `my-host.local` if Bonjour/mDNS is unavailable.
+The command does not install or enable a Bonjour/mDNS responder.
+
+The manifest is published at `/info.json`, whether generated or loaded from disk.
+Only generated entries or manifest-listed regular files in `--dir` are published,
+at `/images/<filename>`. Other files, symlinks, subdirectories and directory
+listings are not exposed. Local files are SHA-256 verified before the server
+starts; a mismatched checksum, conflicting local filename, or image changing
+while it is hashed stops startup. Finish copying images before starting the server.
+Entries without a local file retain their original remote URLs.
+
+The served JSON uses the hostname/IP and port from the client's request for
+local image URLs, including the selected `latest` entry. This makes downloaded
+images reachable through the same LAN address even if a loaded manifest was
+created with a different base URL or the default port 80. A loaded manifest is
+never rewritten. HTTP GET, HEAD and byte-range requests are supported; uploads
+and other writes are rejected.
+
+**Anyone on the LAN can read the manifest and listed images. There is no TLS or
+authentication.** Do not expose this server to the Internet or publish a manifest
+containing credentials or other private data.
+
+Press Ctrl+C to stop. The server keeps a verified startup snapshot and open image
+handles until shutdown. Stop and restart after editing the manifest or images;
+do not modify image contents in place while serving them. This is intended for a
+small local image collection, not a long-running public image service.
+
 ## Update QDL version
 
 flasher-cli embeds a statically builded [qdl](https://github.com/linux-msm/qdl) binary taken from the https://github.com/arduino/qdl-packing repo. To update the qdl version you need to:
