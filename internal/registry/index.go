@@ -51,7 +51,7 @@ func (idx Manifest) parse() Releases {
 			continue
 		}
 
-		os := osByDistro(r.Os)
+		os := OSName(r.Os)
 
 		// The download checks the archive against it, so a checksum that cannot
 		// be right makes this release unusable.
@@ -107,9 +107,8 @@ func boardByLabel(label string) (Board, bool) {
 	return Board{}, false
 }
 
-// osByDistro returns the distribution a release named, which it spells out in
-// full: "Debian GNU/Linux 13 (trixie)" is debian.
-func osByDistro(distro string) string {
+// OSName normalizes a distribution label, e.g. "Debian GNU/Linux 13" to "debian".
+func OSName(distro string) string {
 	name, _, _ := strings.Cut(strings.TrimSpace(distro), " ")
 	return strings.ToLower(name)
 }

@@ -15,11 +15,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/arduino/arduino-flasher-cli/internal/registry"
 )
 
 func imageFile(t *testing.T, dir, name, body string) string {
@@ -291,15 +294,23 @@ func TestFilenameDetectionIsConservative(t *testing.T) {
 }
 
 func TestSourceURLAndLocalHashValidation(t *testing.T) {
-	u, err := sourceURL("image name.zip", "https://images.example/releases/")
-	require.NoError(t, err)
-	assert.Equal(t, "https://images.example/releases/image%20name.zip", u)
+	for _, tc := range []struct{ base, expected string }{
+		{"https://images.example/releases/", "https://images.example/releases/image%20name.zip"},
+		{"https://images.example/team%2Fimages/", "https://images.example/team%2Fimages/image%20name.zip"},
+		{"https://images.example/team%2F", "https://images.example/team%2F/image%20name.zip"},
+		{"https://images.example/team%252Fimages/", "https://images.example/team%252Fimages/image%20name.zip"},
+		{"https://images.example/team//images/", "https://images.example/team//images/image%20name.zip"},
+	} {
+		u, err := sourceURL("image name.zip", tc.base)
+		require.NoError(t, err)
+		assert.Equal(t, tc.expected, u)
+	}
 	for _, base := range []string{"", "https://images.example/?token=secret", "ftp://images.example", "https://images.example/#fragment"} {
 		_, err := sourceURL("image.zip", base)
 		require.Error(t, err)
 	}
 	file := imageFile(t, t.TempDir(), "empty.zip", "")
-	_, err = hashSource(context.Background(), file)
+	_, err := hashSource(context.Background(), file)
 	require.ErrorContains(t, err, "empty")
 	_, err = hashSource(context.Background(), t.TempDir())
 	require.ErrorContains(t, err, "not a regular file")
@@ -307,4 +318,124 @@ func TestSourceURLAndLocalHashValidation(t *testing.T) {
 	cancel()
 	_, err = hashSource(ctx, file)
 	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestInvalidPlanMakesNoImageRequests(t *testing.T) {
+	var requests atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = fmt.Fprint(w, "different image contents for "+r.URL.Path)
+	}))
+	defer srv.Close()
+	first, second := srv.URL+"/first.zip", srv.URL+"/second.zip"
+	for _, action := range []string{"create", "add"} {
+		for _, tc := range []struct {
+			name, latest, message string
+			inputs                []string
+		}{
+			{"unknown latest", srv.URL + "/missing.zip", "not in the manifest", []string{first}},
+			{"invalid latest", "ftp://images.example/image.zip", "HTTP(S)", []string{first}},
+			{"duplicate URL", "", "already in the manifest", []string{first, first}},
+			{"duplicate identity", "", "already exists", []string{first, second}},
+		} {
+			t.Run(action+"/"+tc.name, func(t *testing.T) {
+				requests.Store(0)
+				opts := options{file: filepath.Join(t.TempDir(), "info.json"), board: "unoq", os: "debian", version: "1", latest: tc.latest}
+				var before []byte
+				if action == "add" {
+					edit(t, "create", nil, options{file: opts.file})
+					var err error
+					before, err = os.ReadFile(opts.file)
+					require.NoError(t, err)
+				}
+				_, err := editManifest(context.Background(), action, tc.inputs, opts, &cobra.Command{})
+				require.ErrorContains(t, err, tc.message)
+				assert.Zero(t, requests.Load(), "invalid plans must fail before downloading any image")
+				after, err := os.ReadFile(opts.file)
+				if action == "create" {
+					require.ErrorIs(t, err, os.ErrNotExist)
+				} else {
+					require.NoError(t, err)
+					assert.Equal(t, before, after)
+				}
+			})
+		}
+	}
+}
+
+func TestConflictingNormalizedIdentityPreservesManifest(t *testing.T) {
+	dir := t.TempDir()
+	first := imageFile(t, dir, "unoq-debian-20261101-1.zip", "first image")
+	second := imageFile(t, dir, "custom.zip", "different image")
+	opts := options{file: filepath.Join(dir, "info.json"), baseURL: "https://images.example"}
+	edit(t, "create", []string{first}, opts)
+	before, err := os.ReadFile(opts.file)
+	require.NoError(t, err)
+	opts.board, opts.os, opts.version = "UNO Q", "DEBIAN GNU/Linux 13 (trixie)", "20261101-1"
+	_, err = editManifest(context.Background(), "add", []string{second}, opts, &cobra.Command{})
+	require.ErrorContains(t, err, "already exists")
+	require.ErrorContains(t, err, "different --version")
+	after, err := os.ReadFile(opts.file)
+	require.NoError(t, err)
+	assert.Equal(t, before, after)
+}
+
+func TestRemovedURLCannotRemainLatest(t *testing.T) {
+	dir := t.TempDir()
+	first := imageFile(t, dir, "unoq-debian-20261101-1.zip", "first image")
+	second := imageFile(t, dir, "unoq-debian-20261101-2.zip", "second image")
+	opts := options{file: filepath.Join(dir, "info.json"), baseURL: "https://images.example"}
+	edit(t, "create", []string{first, second}, opts)
+	before, err := os.ReadFile(opts.file)
+	require.NoError(t, err)
+	opts.latest, err = sourceURL(second, opts.baseURL)
+	require.NoError(t, err)
+	_, err = editManifest(context.Background(), "remove", []string{second}, opts, &cobra.Command{})
+	require.ErrorContains(t, err, "not in the manifest")
+	after, err := os.ReadFile(opts.file)
+	require.NoError(t, err)
+	assert.Equal(t, before, after)
+}
+
+// Keep generated-manifest checks local, including the built-in index requests.
+type manifestReaderTransport struct{}
+
+func (manifestReaderTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.URL.Hostname() == "downloads.arduino.cc" {
+		return &http.Response{StatusCode: http.StatusNotFound, Body: http.NoBody}, nil
+	}
+	return http.DefaultTransport.RoundTrip(req)
+}
+
+func TestGeneratedManifestResolvesUniqueImageIdentities(t *testing.T) {
+	t.Setenv("ARDUINO_FLASHER_ADDITIONAL_URLS", "")
+	t.Setenv("ARDUINO_FLASHER_ADDITIONAL_HEADERS", "")
+	original := http.DefaultClient
+	http.DefaultClient = &http.Client{Transport: manifestReaderTransport{}}
+	t.Cleanup(func() { http.DefaultClient = original })
+	dir := t.TempDir()
+	srv := httptest.NewServer(http.FileServer(http.Dir(dir)))
+	defer srv.Close()
+	first := imageFile(t, dir, "unoq-debian-20261101-1.zip", "first image")
+	otherBoard := imageFile(t, dir, "ventunoq-debian-20261101-1.zip", "other board image")
+	otherOS := imageFile(t, dir, "unoq-ubuntu-20261101-1.zip", "other OS image")
+	opts := options{file: filepath.Join(dir, "info.json"), baseURL: srv.URL, os: "Debian GNU/Linux 13 (trixie)"}
+	edit(t, "create", []string{first}, opts)
+	opts.os = ""
+	edit(t, "add", []string{otherBoard, otherOS}, opts)
+	releases, err := registry.NewClient(srv.URL + "/info.json").Fetch(context.Background())
+	require.NoError(t, err)
+	require.Len(t, releases, 3)
+	for _, tc := range []struct{ board, os, file string }{
+		{"unoq", "debian", first},
+		{"ventunoq", "debian", otherBoard},
+		{"unoq", "ubuntu", otherOS},
+	} {
+		r, err := releases.Resolve(tc.os, tc.board, "20261101-1")
+		require.NoError(t, err)
+		expected, err := sourceURL(tc.file, opts.baseURL)
+		require.NoError(t, err)
+		assert.Equal(t, expected, r.Url)
+	}
 }

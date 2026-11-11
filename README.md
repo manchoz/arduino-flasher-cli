@@ -180,12 +180,16 @@ Individual files can be supplied explicitly regardless of their extension.
 Board, OS and versions such as `20261101-1` are detected from filenames. Unknown
 or ambiguous metadata produces a warning and an interactive prompt. For scripts,
 or to override detection, supply `--board`, `--os` and `--version`. These flags
-apply to every image added by that invocation:
+apply to every image added by that invocation. Creating or adding an image rejects
+a second URL with the same board, normalized OS name and version. To replace an
+image, remove its previous entry first or supply a different version:
 
 ```sh
 arduino-flasher-cli manifest add ./custom-image.zip --manifest info.json --base-url https://example.com/images/ --board ventunoq --os "Debian GNU/Linux 13 (trixie)" --version 20261101-1
 ```
 
+The resulting URL list, duplicate image identities and `--latest` selection are
+checked before hashing; errors in those inputs do not trigger image downloads.
 SHA-256 is calculated from the complete file contents. Remote images are streamed
 in full without being saved; this can use significant bandwidth. The existing
 `ARDUINO_FLASHER_ADDITIONAL_HEADERS` setting also applies to these requests.

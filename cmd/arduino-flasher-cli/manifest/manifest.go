@@ -108,46 +108,41 @@ func editManifest(ctx context.Context, action string, inputs []string, opts opti
 	latest := opts.latest
 	if action == "latest" {
 		latest = inputs[0]
-	} else {
+		inputs = nil
+	} else if action != "remove" {
 		var err error
-		if action != "remove" {
-			inputs, err = expandSources(inputs)
-			if err != nil {
-				return m, err
-			}
-		}
-		for _, input := range inputs {
-			u, err := sourceURL(input, opts.baseURL)
-			if err != nil {
-				return m, err
-			}
-			i := slices.IndexFunc(m.Releases, func(r registry.ManifestRelease) bool { return r.Url == u })
-			if action == "remove" {
-				if i < 0 {
-					return m, fmt.Errorf("URL is not in the manifest: %s", u)
-				}
-				m.Releases = slices.Delete(m.Releases, i, i+1)
-				continue
-			}
-			if i >= 0 {
-				return m, fmt.Errorf("URL is already in the manifest: %s", u)
-			}
-			r, err := describeSource(cmd, input, u, opts)
-			if err != nil {
-				return m, err
-			}
-			feedback.Print(i18n.Tr("Calculating SHA-256 for %s...", input))
-			r.Sha256, err = hashSource(ctx, input)
-			if err != nil {
-				return m, fmt.Errorf("could not hash %s: %w", input, err)
-			}
-			m.Releases = append(m.Releases, r)
+		inputs, err = expandSources(inputs)
+		if err != nil {
+			return m, err
 		}
 	}
-	if latest == "" && m.Latest != nil {
-		if slices.ContainsFunc(m.Releases, func(r registry.ManifestRelease) bool { return r.Url == m.Latest.Url }) {
-			latest = m.Latest.Url
+
+	// Validate the resulting URL set before prompting or reading image contents.
+	planned := make(map[string]bool, len(m.Releases)+len(inputs))
+	for _, r := range m.Releases {
+		planned[r.Url] = true
+	}
+	urls := make([]string, len(inputs))
+	for i, input := range inputs {
+		u, err := sourceURL(input, opts.baseURL)
+		if err != nil {
+			return m, err
 		}
+		urls[i] = u
+		if action == "remove" {
+			if !planned[u] {
+				return m, fmt.Errorf("URL is not in the manifest: %s", u)
+			}
+			delete(planned, u)
+		} else {
+			if planned[u] {
+				return m, fmt.Errorf("URL is already in the manifest: %s", u)
+			}
+			planned[u] = true
+		}
+	}
+	if latest == "" && m.Latest != nil && planned[m.Latest.Url] {
+		latest = m.Latest.Url
 	}
 	if latest != "" {
 		u, err := httpURL(latest)
@@ -155,6 +150,38 @@ func editManifest(ctx context.Context, action string, inputs []string, opts opti
 			return m, err
 		}
 		latest = u.String()
+		if !planned[latest] {
+			return m, fmt.Errorf("URL is not in the manifest: %s", latest)
+		}
+	}
+
+	firstNew := len(m.Releases)
+	for i, input := range inputs {
+		if action == "remove" {
+			index := slices.IndexFunc(m.Releases, func(r registry.ManifestRelease) bool { return r.Url == urls[i] })
+			m.Releases = slices.Delete(m.Releases, index, index+1)
+			continue
+		}
+		r, err := describeSource(cmd, input, urls[i], opts)
+		if err != nil {
+			return m, err
+		}
+		if slices.ContainsFunc(m.Releases, func(existing registry.ManifestRelease) bool {
+			return existing.Board == r.Board && registry.OSName(existing.Os) == registry.OSName(r.Os) && existing.Version == r.Version
+		}) {
+			return m, fmt.Errorf("image for %s, %s, version %s already exists; remove the previous entry or specify a different --version", r.Board, registry.OSName(r.Os), r.Version)
+		}
+		m.Releases = append(m.Releases, r)
+	}
+	if action != "remove" {
+		for i, input := range inputs {
+			feedback.Print(i18n.Tr("Calculating SHA-256 for %s...", input))
+			hash, err := hashSource(ctx, input)
+			if err != nil {
+				return m, fmt.Errorf("could not hash %s: %w", input, err)
+			}
+			m.Releases[firstNew+i].Sha256 = hash
+		}
 	}
 	if err := m.SetLatest(latest); err != nil {
 		return m, err

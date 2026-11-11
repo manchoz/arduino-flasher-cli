@@ -57,9 +57,7 @@ func sourceURL(input, baseURL string) (string, error) {
 	if u.RawQuery != "" || u.ForceQuery {
 		return "", fmt.Errorf("--base-url must not contain a query string")
 	}
-	u.Path = strings.TrimRight(u.Path, "/") + "/" + filepath.Base(input)
-	u.RawPath = ""
-	return u.String(), nil
+	return strings.TrimRight(u.String(), "/") + "/" + url.PathEscape(filepath.Base(input)), nil
 }
 
 func expandSources(inputs []string) ([]string, error) {
