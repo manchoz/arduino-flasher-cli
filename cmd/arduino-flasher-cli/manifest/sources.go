@@ -48,7 +48,16 @@ func sourceURL(input, baseURL string) (string, error) {
 		return u.String(), nil
 	}
 	if baseURL == "" {
-		return "", fmt.Errorf("local files require --base-url: %s", input)
+		// shortcut: assumes hostname.local is advertised, query mDNS if custom or collision-renamed names need detection.
+		hostname, err := os.Hostname()
+		if err != nil {
+			return "", fmt.Errorf("could not get the current hostname: %w", err)
+		}
+		hostname, _, _ = strings.Cut(hostname, ".")
+		if hostname == "" {
+			return "", fmt.Errorf("current hostname is empty; specify --base-url")
+		}
+		baseURL = "http://" + hostname + ".local/"
 	}
 	u, err := httpURL(baseURL)
 	if err != nil {

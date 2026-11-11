@@ -165,13 +165,18 @@ or a list of HTTP(S) image URLs:
 
 ```sh
 arduino-flasher-cli manifest create --output info.json
+arduino-flasher-cli manifest create ./images --output info.json
 arduino-flasher-cli manifest create ./images --base-url https://example.com/images/ --output info.json
 arduino-flasher-cli manifest create https://example.com/unoq-debian-20261101-1.tar.zst https://example.com/unoq-debian-20261102-1.tar.zst --output info.json
 ```
 
-Local files require `--base-url`, the published directory where those files will
-be hosted. Each filename is appended to that URL, with spaces and other special
-characters escaped. This command does **not** upload files. Directory scans are
+For local files, omitting `--base-url` uses `http://<hostname>.local/`, the current
+host's default Bonjour/zeroconf name. Any domain suffix on the OS hostname is
+removed before adding `.local`. The host must advertise this name through mDNS
+and serve the images over HTTP on port 80; this command does not enable either
+service. Use `--base-url` for a different advertised name, port, path or HTTPS.
+Each filename is appended to that URL, with spaces and other special characters
+escaped. This command does **not** upload files. Directory scans are
 not recursive and include image archives (`.tar`, `.tar.zst`, `.tar.gz`, `.tgz`,
 `.tar.xz`, `.tar.bz2`, `.zip`) and `.img` files, including compressed `.img` files.
 Other files, subdirectories and symlinks inside the directory are skipped.
@@ -196,7 +201,8 @@ in full without being saved; this can use significant bandwidth. The existing
 HTTP errors, empty files and HTML responses are rejected. Filename detection and
 checksums do not validate that an image is safe or suitable for the board.
 
-Remove an entry by its exact URL, or by its local filename with `--base-url`:
+Remove an entry by its exact URL, or by its local filename. Local filenames use
+the same default host URL unless `--base-url` is supplied:
 
 ```sh
 arduino-flasher-cli manifest remove https://example.com/images/custom-image.zip --manifest info.json

@@ -72,7 +72,7 @@ func newEditCmd(action string) *cobra.Command {
 		cmd.Use = "latest <URL>"
 		cmd.Args = cobra.ExactArgs(1)
 	} else {
-		cmd.Flags().StringVar(&opts.baseURL, "base-url", "", "Published HTTP(S) directory for local files")
+		cmd.Flags().StringVar(&opts.baseURL, "base-url", "", "Published HTTP(S) directory for local files (default: http://<hostname>.local/)")
 		cmd.Flags().StringVar(&opts.latest, "latest", "", "Existing or added URL to select as latest")
 	}
 	if action == "create" || action == "add" {

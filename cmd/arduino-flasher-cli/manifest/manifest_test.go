@@ -259,7 +259,7 @@ func TestFailedCreateDoesNotLeaveAManifest(t *testing.T) {
 		name, base, board, latest, message string
 		duplicate                          bool
 	}{
-		{name: "missing base", message: "--base-url"},
+		{name: "invalid base", base: "relative/path", message: "HTTP(S)"},
 		{name: "bad base", base: "https://images.example/?q=1", message: "query string"},
 		{name: "unknown board", base: "https://images.example", board: "unknown", message: "unknown board"},
 		{name: "unknown latest", base: "https://images.example", latest: "https://images.example/other.zip", message: "not in the manifest"},
@@ -305,7 +305,7 @@ func TestSourceURLAndLocalHashValidation(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, tc.expected, u)
 	}
-	for _, base := range []string{"", "https://images.example/?token=secret", "ftp://images.example", "https://images.example/#fragment"} {
+	for _, base := range []string{"https://images.example/?token=secret", "ftp://images.example", "https://images.example/#fragment"} {
 		_, err := sourceURL("image.zip", base)
 		require.Error(t, err)
 	}
@@ -318,6 +318,39 @@ func TestSourceURLAndLocalHashValidation(t *testing.T) {
 	cancel()
 	_, err = hashSource(ctx, file)
 	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestDefaultBonjourBaseURL(t *testing.T) {
+	hostname, err := os.Hostname()
+	require.NoError(t, err)
+	hostname = strings.SplitN(hostname, ".", 2)[0]
+	require.NotEmpty(t, hostname)
+	u, err := sourceURL("image name.zip", "")
+	require.NoError(t, err)
+	assert.Equal(t, "http://"+hostname+".local/image%20name.zip", u)
+	u, err = sourceURL("https://images.example/image.zip", "")
+	require.NoError(t, err)
+	assert.Equal(t, "https://images.example/image.zip", u, "absolute image URLs must not use the local default")
+
+	dir := t.TempDir()
+	first := imageFile(t, dir, "unoq-debian-20261101-1.zip", "first image")
+	second := imageFile(t, dir, "unoq-debian-20261101-2.zip", "second image")
+	output := filepath.Join(dir, "info.json")
+	cmd := NewManifestCmd()
+	cmd.SetArgs([]string{"create", first, "--output", output})
+	require.NoError(t, cmd.Execute())
+	m, err := readManifest(output)
+	require.NoError(t, err)
+	assert.Equal(t, "http://"+hostname+".local/"+filepath.Base(first), m.Latest.Url)
+	edit(t, "add", []string{second}, options{file: output})
+	m, err = readManifest(output)
+	require.NoError(t, err)
+	require.Len(t, m.Releases, 2)
+	assert.Equal(t, "http://"+hostname+".local/"+filepath.Base(second), m.Releases[1].Url)
+	edit(t, "remove", []string{first, second}, options{file: output})
+	m, err = readManifest(output)
+	require.NoError(t, err)
+	assert.Empty(t, m.Releases)
 }
 
 func TestInvalidPlanMakesNoImageRequests(t *testing.T) {
