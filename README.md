@@ -140,8 +140,9 @@ numbered source sections: one combined official Arduino table, followed by each
 additional index. All matching boards and distributions stay together within
 each table. The official heading is bold green on color-capable terminals;
 additional headings are bold yellow and marked `UNOFFICIAL / UNVALIDATED`.
-Separators and labels remain clear without color. Each contributing index URL
-appears once in its heading, with credentials and query strings redacted.
+Separators and labels remain clear without color. Official index URLs are omitted
+from text output; each additional index URL appears once in its heading, with
+credentials and query strings redacted.
 Separate section numbers distinguish indexes that differ only by redacted
 parameters. Environment-provided indexes still participate in the listing, but
 source headings are enabled only by the command-line `--additional-url` flag.

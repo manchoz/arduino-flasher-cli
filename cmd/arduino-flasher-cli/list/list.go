@@ -187,12 +187,8 @@ func (lr listResult) String() string {
 			title = i18n.Tr("=== SOURCE %d: UNKNOWN ===", i+1)
 		}
 		heading := color.New(color.Bold, headingColor).Sprint(title)
-		indexes := map[string]bool{}
-		for _, r := range groups[key].Releases {
-			indexes[r.SourceURL] = true
-		}
-		for _, index := range slices.Sorted(maps.Keys(indexes)) {
-			heading += "\n" + i18n.Tr("Index: %s", displaySourceURL(index))
+		if !key.official {
+			heading += "\n" + i18n.Tr("Index: %s", displaySourceURL(key.url))
 		}
 		sections = append(sections, heading+"\n"+groups[key].renderTable())
 	}
