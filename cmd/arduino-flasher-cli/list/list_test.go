@@ -28,18 +28,23 @@ import (
 )
 
 type manifestTransport struct {
-	releases registry.Releases
-	requests []string
+	releases   registry.Releases
+	additional map[string]registry.Releases
+	requests   []string
 }
 
 func (s *manifestTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	s.requests = append(s.requests, req.URL.String())
 	status := http.StatusOK
 	var body []byte
-	switch req.URL.String() {
-	case "https://downloads.arduino.cc/debian-im/Stable/info.json":
+	images, added := s.additional[req.URL.String()]
+	if !added {
+		images = s.releases
+	}
+	switch {
+	case added || req.URL.String() == "https://downloads.arduino.cc/debian-im/Stable/info.json":
 		var releases []map[string]string
-		for _, rel := range s.releases {
+		for _, rel := range images {
 			board, ok := registry.BoardByID(rel.Board)
 			if !ok {
 				return nil, fmt.Errorf("unknown fixture board %s", rel.Board)
@@ -54,7 +59,7 @@ func (s *manifestTransport) RoundTrip(req *http.Request) (*http.Response, error)
 		if err != nil {
 			return nil, err
 		}
-	case "https://downloads.arduino.cc/ubuntu-im/Stable/info.json":
+	case req.URL.String() == "https://downloads.arduino.cc/ubuntu-im/Stable/info.json":
 		status = http.StatusNotFound
 	default:
 		return nil, fmt.Errorf("list must not download images: %s", req.URL)
@@ -219,17 +224,56 @@ func TestListFiltersWithCacheMarks(t *testing.T) {
 	require.NotContains(t, output, "ubuntu")
 }
 
+func TestListGroupsBySourceAndHighlightsTrust(t *testing.T) {
+	_, transport, rel := setupList(t)
+	additionalURL := "http://lan-host.local:8080/info.json"
+	custom := rel
+	custom.Version = "20250916-174"
+	transport.additional = map[string]registry.Releases{additionalURL: {custom}}
+	output := executeList(t, "unoq", "--os", "debian", "--additional-url", additionalURL)
+	sections := strings.Split(output, "\n\n")
+	require.GreaterOrEqual(t, len(sections), 2)
+	require.Contains(t, sections[0], "ARDUINO OFFICIAL")
+	require.Contains(t, sections[0], "https://downloads.arduino.cc/debian-im/Stable/info.json")
+	require.Contains(t, sections[0], rel.Version)
+	require.NotContains(t, sections[0], custom.Version)
+	require.Contains(t, sections[1], "UNOFFICIAL / UNVALIDATED")
+	require.Contains(t, sections[1], additionalURL)
+	require.Contains(t, sections[1], custom.Version)
+	require.NotContains(t, sections[1], rel.Version)
+	require.NotContains(t, output, "https://images.example/image.tar.zst", "headings must identify indexes, not archive hosts")
+	require.Contains(t, output, "LATEST is calculated across all sources")
+	require.Len(t, transport.requests, 3)
+}
+
+func TestListSourceHeadingsDoNotExposeCredentials(t *testing.T) {
+	result := listResult{Releases: []listRelease{
+		{Board: "unoq", Os: "debian", Version: "one", SourceURL: "https://user:secret@example.com/info.json?token=private"},
+		{Board: "unoq", Os: "debian", Version: "two", SourceURL: "https://user:secret@example.com/info.json?token=other"},
+	}}
+	output := result.String()
+	require.Contains(t, output, "SOURCE 1")
+	require.Contains(t, output, "SOURCE 2")
+	require.Contains(t, output, "https://example.com/info.json?[query redacted]")
+	require.NotContains(t, output, "user:")
+	require.NotContains(t, output, "secret")
+	require.NotContains(t, output, "token=")
+	require.NotContains(t, output, "private")
+}
+
 func TestListResultJSONIncludesCacheStatus(t *testing.T) {
 	result := listResult{Releases: []listRelease{
-		{Version: "cached", Cached: true},
-		{Version: "not-cached", Cached: false},
+		{Version: "cached", Cached: true, SourceURL: "https://downloads.arduino.cc/debian-im/Stable/info.json", Official: true},
+		{Version: "not-cached", Cached: false, SourceURL: "http://lan-host.local:8080/info.json"},
 	}}
 	data, err := json.Marshal(result.Data())
 	require.NoError(t, err)
 	var decoded struct {
 		Releases []struct {
-			Version string `json:"version"`
-			Cached  *bool  `json:"cached"`
+			Version   string `json:"version"`
+			Cached    *bool  `json:"cached"`
+			SourceURL string `json:"source_url"`
+			Official  *bool  `json:"official"`
 		} `json:"releases"`
 	}
 	require.NoError(t, json.Unmarshal(data, &decoded))
@@ -237,5 +281,8 @@ func TestListResultJSONIncludesCacheStatus(t *testing.T) {
 	for i, release := range decoded.Releases {
 		require.NotNil(t, release.Cached, "the JSON field must be present even when false")
 		require.Equal(t, result.Releases[i].Cached, *release.Cached)
+		require.Equal(t, result.Releases[i].SourceURL, release.SourceURL)
+		require.NotNil(t, release.Official, "official must be present even when false")
+		require.Equal(t, result.Releases[i].Official, *release.Official)
 	}
 }

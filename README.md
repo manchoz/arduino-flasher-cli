@@ -134,6 +134,22 @@ ARDUINO_FLASHER_ADDITIONAL_HEADERS="Authorization: Bearer $TOKEN" \
 An index that cannot be read is reported as a warning and the others are still
 listed. One that is not published yet is passed over in silence.
 
+The `list` command separates images into numbered sections by their source index.
+Official Arduino sections appear first, with bold green headings on color-capable
+terminals. Additional sources have bold yellow `UNOFFICIAL / UNVALIDATED` headings.
+The section separators and labels remain clear without color. Each heading shows
+the index URL once, not the archive download URL; credentials and query strings
+are redacted in the human-readable headings. Separate section numbers distinguish
+indexes that differ only by redacted parameters.
+
+JSON output remains a flat `releases` array and includes `source_url` and
+`official` on each image. JSON retains full source URLs, so treat it as sensitive
+if your index URLs contain credentials or tokens. Official status is assigned
+from the built-in index configuration, never from a manifest's claimed publisher.
+Board IDs, cache identity and image selection are unchanged. `LATEST` continues
+to mean newest across all configured sources for each board and distribution;
+splitting the display does not turn it into a per-source marker.
+
 ## Update QDL version
 
 flasher-cli embeds a statically builded [qdl](https://github.com/linux-msm/qdl) binary taken from the https://github.com/arduino/qdl-packing repo. To update the qdl version you need to:

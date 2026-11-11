@@ -67,6 +67,13 @@ func (c *Client) Fetch(ctx context.Context) (Releases, error) {
 			errs = append(errs, fmt.Errorf("could not read the image index at %s: %w", index, err))
 			continue
 		}
+		official := slices.ContainsFunc(indexes, func(published *url.URL) bool {
+			return published.String() == index.String()
+		})
+		for i := range releases {
+			releases[i].SourceURL = index.String()
+			releases[i].Official = official
+		}
 		res = append(res, releases...)
 	}
 

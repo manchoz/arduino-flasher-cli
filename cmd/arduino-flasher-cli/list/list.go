@@ -9,10 +9,12 @@ import (
 	"cmp"
 	"context"
 	"maps"
+	"net/url"
 	"os"
 	"slices"
 	"strings"
 
+	"github.com/fatih/color"
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/jedib0t/go-pretty/v6/text"
 	"github.com/spf13/cobra"
@@ -32,8 +34,10 @@ func NewListCmd() *cobra.Command {
 		Short: "List the available Linux images",
 		Long: `List the available Linux images.
 
-Everything published is listed, grouped by board and distribution. The argument
-narrows the result to one board, and --os to one distribution.
+Images are separated by source index, with official sources first and additional
+sources clearly marked as unofficial/unvalidated. Within each source, images are
+grouped by board and distribution. The argument selects a board, and --os a
+distribution. LATEST still means newest across all sources for that board and OS.
 The CACHED column marks local archives whose metadata matches the online image.
 Archive checksums are verified before reuse by flash, rather than while listing.
 `,
@@ -89,13 +93,15 @@ func runListCommand(ctx context.Context, boardID string, imageOs string, additio
 	result := listResult{board: board}
 	for _, r := range all.Filter(imageOs, board.ID) {
 		result.Releases = append(result.Releases, listRelease{
-			Version: r.Version,
-			Board:   r.Board,
-			Os:      r.OS,
-			Latest:  r.Latest,
-			Cached:  inventory.Contains(r),
-			Url:     r.Url,
-			Sha256:  r.Sha256,
+			Version:   r.Version,
+			Board:     r.Board,
+			Os:        r.OS,
+			Latest:    r.Latest,
+			Cached:    inventory.Contains(r),
+			Url:       r.Url,
+			Sha256:    r.Sha256,
+			SourceURL: r.SourceURL,
+			Official:  r.Official,
 		})
 	}
 
@@ -122,8 +128,10 @@ type listRelease struct {
 	Cached bool `json:"cached"`
 	// Url and Sha256 are where the archive is published, to fetch it without
 	// going through the flash command.
-	Url    string `json:"url"`
-	Sha256 string `json:"sha256"`
+	Url       string `json:"url"`
+	Sha256    string `json:"sha256"`
+	SourceURL string `json:"source_url"`
+	Official  bool   `json:"official"`
 }
 
 // Data implements Result interface
@@ -140,9 +148,61 @@ func (lr listResult) String() string {
 		return i18n.Tr("No images are published yet.")
 	}
 
-	// Grouped per board and distribution, since that is the line a version
-	// belongs to. Named the way flash and download take them, so a row reads
-	// back into the next command.
+	type source struct {
+		url      string
+		official bool
+	}
+	groups := map[source]listResult{}
+	for _, r := range lr.Releases {
+		key := source{r.SourceURL, r.Official}
+		section := groups[key]
+		section.Releases = append(section.Releases, r)
+		groups[key] = section
+	}
+	order := slices.SortedFunc(maps.Keys(groups), func(a, b source) int {
+		if a.official != b.official {
+			if a.official {
+				return -1
+			}
+			return 1
+		}
+		return strings.Compare(a.url, b.url)
+	})
+	var sections []string
+	for i, key := range order {
+		title := i18n.Tr("=== SOURCE %d: ADDITIONAL — UNOFFICIAL / UNVALIDATED ===", i+1)
+		headingColor := color.FgYellow
+		if key.official {
+			title = i18n.Tr("=== SOURCE %d: ARDUINO OFFICIAL ===", i+1)
+			headingColor = color.FgGreen
+		} else if key.url == "" {
+			title = i18n.Tr("=== SOURCE %d: UNKNOWN ===", i+1)
+		}
+		heading := color.New(color.Bold, headingColor).Sprint(title)
+		sections = append(sections, heading+"\n"+i18n.Tr("Index: %s", displaySourceURL(key.url))+"\n"+groups[key].renderTable())
+	}
+	return strings.Join(sections, "\n\n") + "\n\n" + i18n.Tr("LATEST is calculated across all sources for each board and distribution.")
+}
+
+func displaySourceURL(raw string) string {
+	if raw == "" {
+		return i18n.Tr("unavailable")
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return i18n.Tr("invalid URL")
+	}
+	u.User = nil
+	hadQuery := u.RawQuery != "" || u.ForceQuery
+	u.RawQuery, u.ForceQuery, u.Fragment = "", false, ""
+	if hadQuery {
+		return u.String() + "?" + i18n.Tr("[query redacted]")
+	}
+	return u.String()
+}
+
+func (lr listResult) renderTable() string {
+	// Keep the existing board/OS order and columns inside each source section.
 	type line struct{ board, os string }
 	groups := map[line][]listRelease{}
 	for _, r := range lr.Releases {

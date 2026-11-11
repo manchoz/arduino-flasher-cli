@@ -17,6 +17,10 @@ type Release struct {
 	Version string
 	Url     string
 	Sha256  string
+	// SourceURL is the index this release was fetched from, not its archive URL.
+	SourceURL string
+	// Official is true only for indexes configured as built-in published sources.
+	Official bool
 	// Board the release is built for: an index holds several.
 	Board string
 	// OS is the distribution the release is built for, as the release named it:

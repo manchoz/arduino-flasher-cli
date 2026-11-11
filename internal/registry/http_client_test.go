@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 
@@ -251,6 +252,35 @@ func TestFetchIncludesEnvironmentAndCLIIndexes(t *testing.T) {
 	defer mu.Unlock()
 	assert.Equal(t, []string{"/env-comma", "/env-newline", "/cli-first", "/cli-second"}, requested)
 	require.Len(t, releases, 23, "the built-in, environment and both CLI indexes are read")
+}
+
+func TestFetchTracksIndexSourceAndTrust(t *testing.T) {
+	serveIndexes(t, twoBoardManifest)
+	publishedURL := indexes[0].String()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// An added index cannot grant itself official status or choose its provenance.
+		body := strings.Replace(twoBoardManifest, `"latest":`, `"official": true, "source_url": "https://downloads.arduino.cc/spoof.json", "latest":`, 1)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer srv.Close()
+	envURL, cliURL := srv.URL+"/env.json", srv.URL+"/cli.json"
+	t.Setenv(additionalURLsEnv, envURL)
+	releases, err := NewClient(cliURL).Fetch(context.Background())
+	require.NoError(t, err)
+	require.Len(t, releases, 9)
+	counts := map[string]int{}
+	for _, r := range releases {
+		counts[r.SourceURL]++
+		assert.Equal(t, r.SourceURL == publishedURL, r.Official)
+		assert.NotEqual(t, r.Url, r.SourceURL, "provenance is the index URL, not the archive host")
+	}
+	assert.Equal(t, map[string]int{publishedURL: 3, envURL: 3, cliURL: 3}, counts)
+	for _, r := range releases.Filter(Debian, UnoQ.ID) {
+		assert.NotEmpty(t, r.SourceURL, "filtering preserves provenance")
+	}
+	r, err := releases.Resolve(Debian, UnoQ.ID, "100")
+	require.NoError(t, err)
+	assert.Equal(t, publishedURL, r.SourceURL, "source tracking must not change resolution order")
 }
 
 // An index that is not published yet is an ordinary state of affairs, so it is
