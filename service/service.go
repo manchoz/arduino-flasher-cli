@@ -16,7 +16,7 @@ import (
 
 type flasherServerImpl struct {
 	flasher.UnsafeFlasherServer // Force compile error for unimplemented methods
-	flashBoard                  func(context.Context, string, *paths.Path, string, string, bool, uint64, updater.FlashCallback) error
+	flashBoard                  func(context.Context, string, *paths.Path, string, string, bool, uint64, string, updater.FlashCallback) error
 }
 
 func NewFlasherServer() flasher.FlasherServer {

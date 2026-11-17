@@ -76,6 +76,9 @@ message FlashRequest {
   // manifest and reused, regardless of this option, and are never removed by
   // request cleanup.
   bool cache = 7;
+  // Bughopper USB serial. Empty uses manual EDL and reboot; otherwise the daemon
+  // runs installed pytactl to enter EDL and return to normal boot after flashing.
+  string bughopper_serial = 8;
 }
 
 message FlashResponse {

@@ -32,7 +32,7 @@ import (
 
 func NewFlashCmd() *cobra.Command {
 	var forceYes, preserveUser, cacheImage bool
-	var serialStr string
+	var serialStr, bughopperSerial string
 	var tempDir string
 	var rootSizeStr string
 	var osStr string
@@ -82,7 +82,7 @@ NOTE: On Windows, required drivers are automatically installed with elevated pri
 			}
 			// Flashing needs a board, and the wizard is what asks for one.
 			if len(args) == 0 {
-				interactive.Run(cmd.Context(), cacheImage)
+				interactive.Run(cmd.Context(), cacheImage, bughopperSerial)
 				return
 			}
 			imageArg := ""
@@ -107,13 +107,14 @@ NOTE: On Windows, required drivers are automatically installed with elevated pri
 				}
 			}
 
-			runFlashCommand(cmd.Context(), args[0], imageArg, osStr, version, serialStr, forceYes, preserveUser, tempDir, rootSize, cacheImage)
+			runFlashCommand(cmd.Context(), args[0], imageArg, osStr, version, serialStr, forceYes, preserveUser, tempDir, rootSize, cacheImage, bughopperSerial)
 		},
 	}
 	appCmd.Flags().StringVarP(&version, "version", "v", "", "Version of the image to download. Leave empty for latest")
 	appCmd.Flags().StringVar(&osStr, "os", "", "Distribution to download, if more than one is available")
 	appCmd.Flags().StringVarP(&serialStr, "serial", "s", "", "Serial number of the board as a decimal integer (e.g., 123456789) or a hexadecimal integer (e.g., 0x1A2B3C4D). Digit-only values are treated as decimal; prefix with 0x to force hexadecimal")
 	appCmd.Flags().BoolVarP(&forceYes, "yes", "y", false, "Automatically confirm all prompts")
+	appCmd.Flags().StringVar(&bughopperSerial, "bughopper-serial", "", "Bughopper USB serial; use installed pytactl to enter EDL and reboot after flashing")
 	appCmd.Flags().StringVar(&tempDir, "temp-dir", "", "Parent directory for temporary downloads and extraction; cached archives use the user cache")
 	appCmd.Flags().BoolVar(&cacheImage, "cache", false, "Keep newly downloaded images in the cache for reuse")
 	appCmd.Flags().BoolVar(&preserveUser, "preserve-user", false, "Preserve user partition")
@@ -184,7 +185,7 @@ func rebootRequiredFatal() {
 	feedback.Fatal(i18n.Tr("A system reboot is required to finalize the driver installation. Please reboot your computer and run the flash command again."), feedback.ErrGeneric)
 }
 
-func runFlashCommand(ctx context.Context, boardID, imageArg string, imageOs string, version, serialStr string, forceYes bool, preserveUser bool, tempDir string, rootSize uint64, cacheImage bool) {
+func runFlashCommand(ctx context.Context, boardID, imageArg string, imageOs string, version, serialStr string, forceYes bool, preserveUser bool, tempDir string, rootSize uint64, cacheImage bool, bughopperSerial string) {
 	boardID, imageArg, version = argparse.LegacyArgs(boardID, imageArg, version)
 
 	board, ok := registry.BoardByID(boardID)
@@ -233,11 +234,12 @@ func runFlashCommand(ctx context.Context, boardID, imageArg string, imageOs stri
 	}
 
 	opts := updater.FlashOptions{
-		Serial:       serialStr,
-		PreserveUser: preserveUser,
-		TempDir:      tempDir,
-		RootSize:     rootSize,
-		Cache:        cacheImage,
+		Serial:          serialStr,
+		BughopperSerial: bughopperSerial,
+		PreserveUser:    preserveUser,
+		TempDir:         tempDir,
+		RootSize:        rootSize,
+		Cache:           cacheImage,
 	}
 	if imagePath != nil {
 		err = updater.FlashImage(ctx, imagePath, board.ID, opts)
@@ -247,7 +249,11 @@ func runFlashCommand(ctx context.Context, boardID, imageArg string, imageOs stri
 	if err != nil {
 		feedback.Fatal(i18n.Tr("error flashing the board: %v", err), feedback.ErrBadArgument)
 	}
-	feedback.Print("\nThe board has been successfully flashed. You can now power-cycle the board (unplug and re-plug). Remember to remove the jumper.")
+	if bughopperSerial != "" {
+		feedback.Print(i18n.Tr("\nThe board has been successfully flashed and a normal boot was requested using Bughopper."))
+	} else {
+		feedback.Print("\nThe board has been successfully flashed. You can now power-cycle the board (unplug and re-plug). Remember to remove the jumper.")
+	}
 }
 
 // resolveImage returns the path of the image the argument points at, or nil when

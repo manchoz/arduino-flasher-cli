@@ -29,7 +29,7 @@ import (
 )
 
 // Run starts the interactive wizard and performs the flash.
-func Run(ctx context.Context, cacheImage bool) {
+func Run(ctx context.Context, cacheImage bool, bughopperSerial string) {
 	images := fetchImages(ctx)
 	inventory := readImageCache(ctx)
 
@@ -184,11 +184,15 @@ func Run(ctx context.Context, cacheImage bool) {
 
 	rootSize := parseRootSize(variant.Capacity, rootPctStr, preserveUser)
 
-	opts := updater.FlashOptions{PreserveUser: preserveUser, RootSize: rootSize, Cache: cacheImage}
+	opts := updater.FlashOptions{PreserveUser: preserveUser, RootSize: rootSize, Cache: cacheImage, BughopperSerial: bughopperSerial}
 	if err := updater.DownloadAndFlash(ctx, board.ID, selected, opts); err != nil {
 		feedback.Fatal(i18n.Tr("error flashing the board: %v", err), feedback.ErrBadArgument)
 	}
-	feedback.Print(i18n.Tr("\nThe board has been successfully flashed. You can now power-cycle the board (unplug and re-plug). Remember to remove the jumper."))
+	if bughopperSerial != "" {
+		feedback.Print(i18n.Tr("\nThe board has been successfully flashed and a normal boot was requested using Bughopper."))
+	} else {
+		feedback.Print(i18n.Tr("\nThe board has been successfully flashed. You can now power-cycle the board (unplug and re-plug). Remember to remove the jumper."))
+	}
 }
 
 // SelectImage asks which board to use and, when withVersion, which of its

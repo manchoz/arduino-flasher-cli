@@ -51,6 +51,45 @@ flashed directly without being added to the cache.
 When reusing a verified cached archive, the free-space check only accounts for
 extraction.
 
+## Automate flashing with Bughopper
+
+Connect Bughopper to the target's JCTL connector and connect both Bughopper and
+the target's primary USB port to the flashing host. Install `pytactl` separately
+(Python 3.10 or newer, for example `pipx install pytactl`) and make its command
+available on PATH. Use `pytactl list` to find the controller's USB serial.
+Configure the USB permissions/drivers required by pytactl; Bughopper V2 also
+requires its native HIDAPI dependency. Bughopper V1 and V2 need no configuration
+file.
+
+Specify the Bughopper USB serial explicitly:
+
+```sh
+arduino-flasher-cli flash unoq --bughopper-serial DP05DIAN --yes
+arduino-flasher-cli flash unoq ./image.tar.zst --bughopper-serial DP05DIAN --yes
+# Use the same controller with the interactive wizard
+arduino-flasher-cli flash --bughopper-serial DP05DIAN
+```
+
+This serial identifies Bughopper, such as `ID_SERIAL_SHORT` on Linux; it is
+separate from the target's numeric `--serial` and is not a COM port or device
+path. It must start with a letter or digit and contain only letters, digits,
+`_`, `.`, `:` or `-`. Supply both serials when selecting a target among multiple connected boards.
+Remove any manual EDL jumper so Bughopper can return the target to normal boot.
+
+After preparing the image, the tool runs
+`pytactl oneshot bootToEDL --serial <serial>` before any QDL board access. After
+successful flashing it runs `pytactl oneshot powerOn --serial <serial>` to boot
+normally. EDL failure stops flashing; QDL failure skips reboot. If the final
+power command fails, the error states that the image was flashed successfully
+but returning to normal boot failed. Normal boot is requested, not monitored.
+Omitting `--bughopper-serial` keeps the manual workflow. `--yes` controls the
+existing CLI confirmation prompts; the wizard remains interactive.
+
+Daemon clients set `FlashRequest.bughopper_serial` to use the same sequence.
+Install pytactl and grant USB access on the daemon host. Older requests with
+this field unset keep the manual workflow. Control messages use existing flash
+progress events, and a reboot failure is returned as an RPC error.
+
 ## Manage cached images
 
 Inspect or clear the shared image cache with:

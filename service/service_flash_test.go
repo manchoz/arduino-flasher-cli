@@ -177,10 +177,11 @@ func setupFlash(t *testing.T) *flashFixture {
 	require.NoError(t, os.WriteFile(filepath.Join(f.request.TempPath, "keep"), []byte("parent content"), 0o600))
 	// Replace only the hardware boundary. Downloading, validation, extraction,
 	// progress and cleanup all execute the real service implementation.
-	f.server.flashBoard = func(ctx context.Context, serial string, dir *paths.Path, version, board string, preserve bool, rootSize uint64, cb updater.FlashCallback) error {
+	f.server.flashBoard = func(ctx context.Context, serial string, dir *paths.Path, version, board string, preserve bool, rootSize uint64, bughopperSerial string, cb updater.FlashCallback) error {
 		f.flashCalls.Add(1)
 		require.NoError(t, ctx.Err())
 		require.Equal(t, f.request.Serial, serial)
+		require.Equal(t, f.request.BughopperSerial, bughopperSerial)
 		require.Equal(t, f.request.Version, version)
 		require.Equal(t, f.request.Board, board)
 		require.Equal(t, f.request.PreserveUser, preserve)
@@ -275,7 +276,7 @@ func TestFlashAllowsCacheClearDuringFlashing(t *testing.T) {
 				f.seedCache(t)
 			}
 			flashBoard := f.server.flashBoard
-			f.server.flashBoard = func(ctx context.Context, serial string, dir *paths.Path, version, board string, preserve bool, rootSize uint64, cb updater.FlashCallback) error {
+			f.server.flashBoard = func(ctx context.Context, serial string, dir *paths.Path, version, board string, preserve bool, rootSize uint64, bughopperSerial string, cb updater.FlashCallback) error {
 				// Extraction has finished, but Flash has not returned yet. Clearing
 				// the cache must succeed even on Windows, where open archives block it.
 				require.NoError(t, f.imageCache.Clear(ctx))
@@ -284,7 +285,7 @@ func TestFlashAllowsCacheClearDuringFlashing(t *testing.T) {
 				require.Empty(t, inventory.Images)
 				require.Zero(t, inventory.TotalSize)
 				// Flashing still uses the independently extracted files.
-				return flashBoard(ctx, serial, dir, version, board, preserve, rootSize, cb)
+				return flashBoard(ctx, serial, dir, version, board, preserve, rootSize, bughopperSerial, cb)
 			}
 
 			require.NoError(t, f.server.Flash(f.request, f.stream))
@@ -460,6 +461,7 @@ func TestFlashInvalidRequest(t *testing.T) {
 
 func TestFlashGRPCSharedCache(t *testing.T) {
 	f := setupFlash(t)
+	f.request.BughopperSerial = "DP05DIAN"
 	listener := bufconn.Listen(1 << 20)
 	server := grpc.NewServer()
 	flasher.RegisterFlasherServer(server, f.server)
@@ -501,6 +503,7 @@ func TestFlashRequestCacheDefaultsToFalse(t *testing.T) {
 		var decoded flasher.FlashRequest
 		require.NoError(t, proto.Unmarshal(data, &decoded))
 		require.Equal(t, keep, decoded.GetCache())
+		require.Empty(t, decoded.GetBughopperSerial())
 	}
 }
 

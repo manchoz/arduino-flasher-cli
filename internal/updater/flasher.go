@@ -12,8 +12,10 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/arduino/go-paths-helper"
 	"github.com/dustin/go-humanize"
@@ -36,10 +38,11 @@ const (
 )
 
 type FlashOptions struct {
-	Serial       string
-	PreserveUser bool
-	TempDir      string
-	RootSize     uint64
+	Serial          string
+	BughopperSerial string
+	PreserveUser    bool
+	TempDir         string
+	RootSize        uint64
 	// Cache retains newly downloaded archives. Existing cached images are
 	// always reused after verification, regardless of this option.
 	Cache bool
@@ -59,7 +62,7 @@ func DownloadAndFlash(ctx context.Context, boardID string, rel registry.Release,
 		return fmt.Errorf("could not download and extract the image: %v", err)
 	}
 
-	return FlashBoard(ctx, opts.Serial, temp, rel.Version, boardID, opts.PreserveUser, opts.RootSize, nil)
+	return FlashBoard(ctx, opts.Serial, temp, rel.Version, boardID, opts.PreserveUser, opts.RootSize, opts.BughopperSerial, nil)
 }
 
 // FlashImage flashes an image already on disk, extracting it first when it is an
@@ -82,7 +85,7 @@ func FlashImage(ctx context.Context, imagePath *paths.Path, boardID string, opts
 		imagePath = temp
 	}
 
-	return FlashBoard(ctx, opts.Serial, imagePath, imagePath.Base(), boardID, opts.PreserveUser, opts.RootSize, nil)
+	return FlashBoard(ctx, opts.Serial, imagePath, imagePath.Base(), boardID, opts.PreserveUser, opts.RootSize, opts.BughopperSerial, nil)
 }
 
 func checkFreeSpace(dir *paths.Path, requiredGiB uint64, what string) error {
@@ -117,13 +120,21 @@ const (
 	SystemReservedBytes uint64 = 1 * GiB
 )
 
-func FlashBoard(ctx context.Context, serialStr string, downloadedImagePath *paths.Path, version string, boardID string, preserveUser bool, rootSize uint64, callback FlashCallback) error {
+func FlashBoard(ctx context.Context, serialStr string, downloadedImagePath *paths.Path, version string, boardID string, preserveUser bool, rootSize uint64, bughopperSerial string, callback FlashCallback) error {
 	qdlPath, cleanup, err := installQdl()
 	if err != nil {
 		return err
 	}
 	defer cleanup()
+	return flashBoard(ctx, qdlPath, serialStr, downloadedImagePath, version, boardID, preserveUser, rootSize, bughopperSerial, callback)
+}
 
+func flashBoard(ctx context.Context, qdlPath *paths.Path, serialStr string, downloadedImagePath *paths.Path, version string, boardID string, preserveUser bool, rootSize uint64, bughopperSerial string, callback FlashCallback) (retErr error) {
+	if bughopperSerial != "" {
+		if err := validateBughopperSerial(bughopperSerial); err != nil {
+			return err
+		}
+	}
 	flashDir, err := searchForFlashDir(downloadedImagePath)
 	if err != nil {
 		return err
@@ -143,9 +154,38 @@ func FlashBoard(ctx context.Context, serialStr string, downloadedImagePath *path
 		}
 	}
 
+	// Validate the target serial before changing the board's boot mode.
+	if _, err := appendBoardSerial(nil, serialStr); err != nil {
+		return err
+	}
+	flashStarted := false
+	if bughopperSerial != "" {
+		if err := runBughopper(ctx, "bootToEDL", bughopperSerial, callback); err != nil {
+			return fmt.Errorf("could not enter EDL using Bughopper: %w", err)
+		}
+		// Until qdl starts writing, the board is untouched: a failure in the
+		// checks below must not leave it parked in EDL, so try to boot it back.
+		// Once qdl has started the state is unknown and no reboot is attempted.
+		defer func() {
+			if retErr == nil || flashStarted {
+				return
+			}
+			// ctx may be the reason for failing; the recovery must still run.
+			recoverCtx := context.WithoutCancel(ctx)
+			if err := runBughopper(recoverCtx, "powerOn", bughopperSerial, callback); err != nil {
+				retErr = fmt.Errorf("%w (returning to normal boot using Bughopper also failed: %v)", retErr, err)
+			}
+		}()
+	}
+
 	rawProgram := "rawprogram0.xml"
+	var cleanup func()
 	if board.PreserveUser {
-		feedback.Print(i18n.Tr("Checking board size and image version. Please connect the board in EDL mode."))
+		if bughopperSerial == "" {
+			feedback.Print(i18n.Tr("Checking board size and image version. Please connect the board in EDL mode."))
+		} else {
+			feedback.Print(i18n.Tr("Checking board size and image version."))
+		}
 		boardGPT, err := readBoardGPTTable(ctx, qdlPath, flashDir, serialStr)
 		if err != nil {
 			return err
@@ -277,10 +317,56 @@ func FlashBoard(ctx context.Context, serialStr string, downloadedImagePath *path
 		cmd.RedirectStdoutTo(stdout)
 	}
 
+	flashStarted = true
 	if err := cmd.RunWithinContext(ctx); err != nil {
 		return fmt.Errorf("%w%s", err, qdlExitHint(err))
 	}
+	if bughopperSerial != "" {
+		if err := runBughopper(ctx, "powerOn", bughopperSerial, callback); err != nil {
+			return fmt.Errorf("image flashed successfully, but return to normal boot using Bughopper failed: %w", err)
+		}
+	}
 
+	return nil
+}
+
+// bughopperTimeout bounds a single pytactl invocation so a hung USB transfer
+// cannot block the flash (or the daemon RPC) forever.
+var bughopperTimeout = 60 * time.Second
+
+// bughopperSerialPattern keeps the serial from being parsed as a pytactl option.
+var bughopperSerialPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:-]*$`)
+
+func validateBughopperSerial(serial string) error {
+	if !bughopperSerialPattern.MatchString(serial) {
+		return fmt.Errorf("invalid Bughopper serial %q: it must start with a letter or digit and contain only letters, digits, '_', '.', ':' or '-'", serial)
+	}
+	return nil
+}
+
+func runBughopper(ctx context.Context, command, serial string, callback FlashCallback) error {
+	if err := validateBughopperSerial(serial); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, bughopperTimeout)
+	defer cancel()
+	executable, err := exec.LookPath("pytactl")
+	if err != nil {
+		return fmt.Errorf("pytactl is not available (install it and add it to PATH): %w", err)
+	}
+	cmd, err := paths.NewProcess(nil, executable, "oneshot", command, "--serial", serial)
+	if err != nil {
+		return err
+	}
+	message := "Bughopper: " + command
+	if callback != nil {
+		callback(FlashEvent{Log: message})
+	} else {
+		feedback.Print(message)
+	}
+	if out, err := cmd.RunAndCaptureCombinedOutput(ctx); err != nil {
+		return fmt.Errorf("pytactl %s failed: %w\n%s", command, err, out)
+	}
 	return nil
 }
 

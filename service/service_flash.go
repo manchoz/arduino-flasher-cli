@@ -174,7 +174,7 @@ func (s *flasherServerImpl) Flash(req *flasher.FlashRequest, stream flasher.Flas
 	if err := context.Cause(ctx); err != nil {
 		return err
 	}
-	if err := s.flashBoard(ctx, req.GetSerial(), extractPath, rel.Version, board.ID, req.GetPreserveUser(), 0, func(fe updater.FlashEvent) {
+	if err := s.flashBoard(ctx, req.GetSerial(), extractPath, rel.Version, board.ID, req.GetPreserveUser(), 0, req.GetBughopperSerial(), func(fe updater.FlashEvent) {
 		flashCB(&flasher.TaskProgress{
 			Name:     taskFlash,
 			Message:  fe.Log,
